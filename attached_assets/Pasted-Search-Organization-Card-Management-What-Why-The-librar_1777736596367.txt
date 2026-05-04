@@ -1,0 +1,63 @@
+Search, Organization & Card Management
+
+What & Why
+
+The library and deck detail pages lack basic organization tools that users expect once they have more than a handful of decks and cards. There is no in-deck card search, no deck sorting, tags are stored in the DB but never shown in the UI, and there is no way to manually add a single card to a deck without running the AI generator. These are daily friction points for active users.
+
+Done looks like
+
+Users can type in a search box inside deck-detail to filter cards by front/back text; results update instantly
+Users can sort the deck library by: Name (A–Z), Date created (newest/oldest), Card count, and Last studied (from localStorage study-stats)
+Card tags are displayed as small badges on each card in the deck-detail list and can be edited inline
+A "Add card" button in deck-detail opens a small modal/sheet to manually create a blank front/back (and optional choices for MCQ) card in that deck, without needing the AI
+Clicking a generation history item navigates to the corresponding deck (if that deck still exists)
+Out of scope
+
+Full-text search across all decks simultaneously
+Tag-based cross-deck filtering
+Steps
+
+1. In-deck card search (deck-detail.tsx)
+
+Add a <Input> search box above the card list (between the tabs row and the card list). Wire to a cardSearch state string.
+Filter filteredCards by: card.front.toLowerCase().includes(q) || card.back.toLowerCase().includes(q) where q = cardSearch.toLowerCase().trim()
+Show a "No cards match …" empty state with a clear button when no results
+Debounce the filter with useMemo (already used) — no extra lib needed
+2. Deck library sorting (decks.tsx)
+
+Add a sortBy state: "name" | "date-desc" | "date-asc" | "cards" | "studied" defaulting to "date-desc"
+Add a <Select> sort control next to the search box in the decks list header
+Apply the sort in the filteredDecks useMemo:
+name: localeCompare
+date-desc/asc: new Date(d.createdAt).getTime()
+cards: by d.cardCount descending
+studied: match against getDeckStats(getSessions()) map — decks studied most recently first, unstudied decks last
+Persist sortBy in localStorage so it survives navigation
+3. Tag display and edit on cards (deck-detail.tsx)
+
+In CardItem, parse card.tags (comma-separated string or JSON array) and render each tag as a small violet <Badge> below the front text
+In the edit mode for a card, add a tags input (comma-separated, or a <Input> that shows typed tags as pills)
+On save, join tags array back into the existing comma-separated format and PATCH via the existing useUpdateCard mutation
+4. Manual "Add card" button (deck-detail.tsx)
+
+Add an "Add card" button in the deck-detail header (beside the Study/Export buttons)
+Clicking it opens a <Dialog> with:
+Front textarea (required)
+Back textarea (required)
+Card type toggle: "Flashcard" | "MCQ" — when MCQ is selected, show 2–6 choice inputs + a correct-answer radio
+Tags input (optional, comma-separated)
+"Add card" submit button — calls useCreateCard mutation (already exists in API client) with { deckId, front, back, cardType, choices, correctIndex, tags }
+On success: invalidate the deck cards query so the new card appears immediately; show a toast "Card added"
+5. History → Deck navigation (history.tsx)
+
+The generations list items already have a deckName field. Add a deckId field to the generation record (it's stored on the server — check generationsTable schema and add it if missing).
+In the history item card, if deckId exists, render a <Link href={/decks/${deckId}}> "Open deck →" text button at the bottom right of the card.
+If the deck has been deleted, the link navigates to the deck-detail which will show a "Deck not found" state (already handles this gracefully).
+Relevant files
+
+artifacts/anki-generator/src/pages/deck-detail.tsx
+artifacts/anki-generator/src/pages/decks.tsx
+artifacts/anki-generator/src/pages/history.tsx
+artifacts/anki-generator/src/lib/study-stats.ts
+lib/db/src/schema/generations.ts (check for deckId column)
+artifacts/api-server/src/routes/generations.ts

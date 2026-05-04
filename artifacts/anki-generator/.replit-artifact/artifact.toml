@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Anki Card Generator"
+version = "1.0.0"
+id = "artifacts/anki-generator"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23060
+
+[services.development]
+run = "pnpm --filter @workspace/anki-generator run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/anki-generator", "run", "build" ]
+publicDir = "artifacts/anki-generator/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23060"
+BASE_PATH = "/"

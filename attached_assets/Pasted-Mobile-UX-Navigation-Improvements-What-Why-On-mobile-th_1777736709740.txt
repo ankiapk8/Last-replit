@@ -1,0 +1,79 @@
+Mobile UX & Navigation Improvements
+
+What & Why
+
+On mobile the app relies on a single header bar where nav labels disappear at small widths, leaving only icons — Library, Dashboard, and Generate. There is no dark mode toggle anywhere. The generate form processes multiple dropped files sequentially (one at a time) instead of in parallel, causing a long wait when a user drops 3+ PDFs. These are daily friction points for any user on a phone or tablet.
+
+Done looks like
+
+A sticky bottom navigation bar (iOS-style tab bar) appears on screens smaller than lg breakpoint with: Dashboard, Library, Generate (CTA), History tabs — thumb-reachable without scrolling to the top
+The header on desktop retains its current look but is simplified (remove the duplicated nav links since bottom nav covers it on mobile)
+A dark/light mode toggle (sun/moon icon button) appears at the right of the header on all screen sizes; toggling stores the preference in localStorage and applies it immediately via the class="dark" toggle on <html>
+Multiple files dropped on the generate form are processed in parallel (using Promise.all) instead of sequentially, cutting wait time proportionally
+The generate form's file list correctly shows individual extraction progress per file when parallel processing is active
+On mobile, the study mode card flips when the user taps the card anywhere (not just the "Reveal" button), making one-handed studying easier
+On mobile, the practice mode "Confirm" button is stuck to the bottom of the viewport (fixed position) so it's always reachable without scrolling
+Out of scope
+
+Full PWA push notifications
+Native mobile app (APK feature is already separately implemented)
+Steps
+
+1. Bottom navigation bar for mobile (layout.tsx + new bottom-nav.tsx)
+
+Create src/components/bottom-nav.tsx: a <nav> with position: fixed; bottom: 0; left: 0; right: 0; z-index: 50 and pb-safe (safe area inset) for iOS notch support
+Four tabs: Dashboard (LayoutDashboard), Library (Library), Generate (Sparkles, highlighted), History (History)
+Active tab: primary color icon + label, inactive: muted-foreground
+Add lg:hidden to the bottom nav so it only shows on mobile/tablet
+Add pb-20 lg:pb-0 to the <main> in layout to prevent content being hidden behind the bar
+Add hidden lg:flex to the existing header nav links so they're desktop-only
+2. Dark mode toggle
+
+Add a useDarkMode() hook in src/hooks/use-dark-mode.ts:
+function useDarkMode() {
+  const [dark, setDark] = useState(() => {
+    const stored = localStorage.getItem("ankigen-theme");
+    if (stored) return stored === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("ankigen-theme", dark ? "dark" : "light");
+  }, [dark]);
+  return [dark, setDark] as const;
+}
+In layout.tsx, use useDarkMode() and add a <Button variant="ghost" size="icon"> with Sun / Moon icon at the end of the header (before HeaderApkButton)
+Initialize the class on page load in index.html with an inline script to avoid flash: <script>document.documentElement.classList.toggle('dark', localStorage.getItem('ankigen-theme') === 'dark' || (!localStorage.getItem('ankigen-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))</script>
+3. Parallel file processing in generate-form (generate-form.tsx)
+
+Change handleFileInput and handleDrop from sequential for…await loops to parallel:
+const handleDrop = async (e: React.DragEvent) => {
+  e.preventDefault();
+  setIsDragging(false);
+  await Promise.all(Array.from(e.dataTransfer.files).map(f => processFile(f)));
+};
+Same for handleFileInput
+Each file already has its own FileEntry state with independent progress tracking, so parallel processing works correctly without changes to the progress display
+4. Tap-to-flip in study mode mobile (deck-detail.tsx)
+
+In StudyMode, make the entire card <CardUI> clickable when not yet revealed:
+<CardUI
+  className="..."
+  onClick={!revealed && !isMcq ? () => setRevealed(true) : undefined}
+  style={{ cursor: !revealed && !isMcq ? "pointer" : "default" }}
+>
+Add a small "Tap to reveal" hint below the front text on mobile (sm:hidden class) so users discover the gesture
+5. Fixed "Confirm" button on mobile in practice mode (practice.tsx)
+
+The Confirm button is currently inside the scrollable card area. On long questions, it scrolls off-screen.
+Move it to a fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur-sm border-t container (only on mobile — lg:relative lg:border-none lg:bg-transparent)
+Add pb-24 lg:pb-0 to the question card scroll area to prevent content hiding behind the fixed button
+Relevant files
+
+artifacts/anki-generator/src/components/layout.tsx
+artifacts/anki-generator/src/components/bottom-nav.tsx ← new
+artifacts/anki-generator/src/components/generate-form.tsx
+artifacts/anki-generator/src/pages/deck-detail.tsx
+artifacts/anki-generator/src/pages/practice.tsx
+artifacts/anki-generator/src/hooks/use-dark-mode.ts ← new
+artifacts/anki-generator/index.html

@@ -1,0 +1,89 @@
+Performance, Architecture & Code Quality
+
+What & Why
+
+Three key pages (deck-detail.tsx at 1,338 lines, decks.tsx at 1,438 lines, generate-form.tsx at 936 lines) have grown to sizes that slow down development and make bugs harder to spot. Image data is stored as base64 blobs directly in the Postgres database (via the image and sourceImage text columns on cards), making queries carry megabytes of data for any deck with visual cards. There is also no rate limiting on the expensive AI endpoints, making them trivially abusable. These issues compound over time.
+
+Done looks like
+
+Each of the three bloated files is split into focused sub-components/hooks with clear responsibilities; no single file exceeds ~400 lines
+Visual card images (base64 JPEG thumbnails stored in cards.image and cards.sourceImage) are migrated to Replit Object Storage; the DB columns store a short URL/key instead of the raw base64
+The /api/generate/stream and /api/explain endpoints have a simple sliding-window rate limiter (max 10 requests per IP per minute) that returns HTTP 429 with a clear message
+The TanStack Query cache in App.tsx no longer persists large image blobs to localStorage (which could exceed the 5 MB storage quota for visual-heavy libraries), instead excluding image-heavy queries from the persisted cache
+Out of scope
+
+Full CDN integration for image delivery
+Database query optimization beyond the image migration
+Steps
+
+1. Split deck-detail.tsx into sub-modules
+
+Extract the following into their own files under src/pages/deck-detail/:
+
+StudyMode.tsx — the entire function StudyMode component (~570 lines)
+CardItem.tsx — the card list item component with edit/delete (~100 lines)
+BriefBreakdownView.tsx — the MCQ answer breakdown component (~130 lines)
+hooks/useDeckDetail.ts — all data-fetching hooks, export mutations, and query invalidation logic
+deck-detail.tsx becomes a thin orchestrator that imports and wires these together (~120 lines)
+2. Split decks.tsx into sub-modules
+
+Extract into src/pages/decks/:
+
+DeckRow.tsx — the deck tree row component with expand/collapse (~150 lines)
+QbankRow.tsx — the qbank tree row component (~100 lines)
+MergeDialog.tsx — the merge decks dialog (~80 lines)
+BulkActionBar.tsx — the fixed bottom bar shown in select mode (~60 lines)
+hooks/useDecksPage.ts — all state management (search, select, collapse, sort)
+decks.tsx becomes ~150 lines
+3. Split generate-form.tsx into sub-modules
+
+Extract into src/components/generate-form/:
+
+FileEntry.tsx — the individual file pill/card component (~180 lines)
+DropZone.tsx — the drag-and-drop zone with file input (~80 lines)
+FileSettings.tsx — per-file deck name, card count, deck type, custom prompt controls (~120 lines)
+hooks/useGenerateForm.ts — all state and generation logic
+generate-form.tsx becomes a thin layout wrapper (~100 lines)
+4. Rate limiting on AI endpoints (artifacts/api-server/src/routes/generate.ts, explain.ts)
+
+Add a simple in-memory sliding window rate limiter (src/lib/rate-limiter.ts) with a Map<string, number[]> keyed by IP:
+export function createRateLimiter(maxRequests: number, windowMs: number) {
+  const map = new Map<string, number[]>();
+  return (ip: string): boolean => {
+    const now = Date.now();
+    const times = (map.get(ip) ?? []).filter(t => now - t < windowMs);
+    if (times.length >= maxRequests) return false;
+    times.push(now);
+    map.set(ip, times);
+    return true;
+  };
+}
+Apply as Express middleware before the generate and explain route handlers: max 10 requests per IP per 60 seconds
+Return { error: "Too many requests. Please wait a moment before generating again." } with HTTP 429
+5. Exclude image blobs from localStorage cache persistence (App.tsx)
+
+The shouldDehydrateQuery function currently caches any query whose key includes /decks, /cards, etc. Queries for deck cards include base64 image strings that can be megabytes each, filling localStorage quickly.
+Add exclusion: when hydrating, strip image and sourceImage fields from card data before persisting:
+dehydrateOptions: {
+  shouldDehydrateQuery: (q) => { ... }, // existing check
+  // Add a custom serializer that strips image blobs
+}
+Alternatively, set gcTime for card queries to 0 so they are never persisted (they re-fetch quickly):
+// In useListDeckCards query options, add: gcTime: 0
+The simplest fix: in shouldDehydrateQuery, also check that the query key does NOT include "DeckCards" or "listDeckCards".
+6. Object Storage migration for card images (longer-term step)
+
+Use the Replit Object Storage skill to set up a bucket
+Add a server utility src/lib/image-store.ts that stores a base64 data URL as a binary PNG/JPEG to object storage and returns a public URL
+Modify the card-insert logic in generate.ts to call imageStore.put(base64) → store the returned URL instead of the raw base64 in cards.image and cards.sourceImage
+Write a one-time migration script that reads all existing cards with base64 image/sourceImage values, uploads them, and updates the DB rows with the URL
+This step requires reading the object-storage skill for exact API details
+Relevant files
+
+artifacts/anki-generator/src/pages/deck-detail.tsx → split into src/pages/deck-detail/
+artifacts/anki-generator/src/pages/decks.tsx → split into src/pages/decks/
+artifacts/anki-generator/src/components/generate-form.tsx → split into src/components/generate-form/
+artifacts/api-server/src/routes/generate.ts
+artifacts/api-server/src/routes/explain.ts
+artifacts/api-server/src/lib/rate-limiter.ts ← new
+artifacts/anki-generator/src/App.tsx

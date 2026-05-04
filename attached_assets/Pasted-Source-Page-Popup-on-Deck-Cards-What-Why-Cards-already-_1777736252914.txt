@@ -1,0 +1,39 @@
+Source Page Popup on Deck Cards
+
+What & Why
+
+Cards already store the source PDF page thumbnail (sourceImage), the crop bounding box (bbox), and the page number (pageNumber). The current "Compare to source page" UI is a tiny inline toggle inside CropCompare — not discoverable and not visually impressive. This task replaces it with a proper full-screen lightbox modal that pops up beautifully when a user clicks a "View Source Page" button, and surfaces a styled page-number badge on every card.
+
+Done looks like
+
+Every card in the deck-detail list that has a sourceImage shows a small "View Source Page" button (book-open icon + page number). Clicking it opens a full-screen modal.
+The modal shows the full PDF page image at maximum readable size with:
+A glowing, animated bounding-box highlight (pulsing border + soft fill) around the figure that generated the card
+A "Zoom to figure" toggle that smoothly transitions to show only the cropped region, and back
+Page number badge in the top-left corner (e.g. "Page 12")
+Figure type badge (e.g. "Flowchart", "Radiology") in the top-right if available
+A zoom-in/zoom-out button for pinch-free desktop zoom (CSS transform scale controlled by a slider)
+A close button (×) and Escape key to dismiss
+Previous / Next arrows if the deck has multiple visual cards — cycling only through cards that have a sourceImage
+Text-only cards that have a pageNumber but no sourceImage show a muted "Page N" pill badge on the card header (not a button, just an indicator).
+The study/flashcard view (carousel inside deck-detail) shows the same "View Source Page" button when the current card has a sourceImage. Clicking it opens the same modal without leaving the study session.
+The modal uses a smooth fade + scale-in entry animation (framer-motion), dark semi-transparent backdrop, and is fully responsive (works on mobile in portrait).
+The existing CropCompare inline toggle is preserved as a fallback / compact alternative for users who prefer side-by-side comparison inside the card.
+Out of scope
+
+Storing source-page images for text-only cards (they get a page-number pill, not a full-page viewer)
+PDF re-rendering on demand from the original file
+Multiple pages side-by-side in the modal
+Steps
+
+Build SourcePageModal component — a new src/components/source-page-modal.tsx that accepts sourceImage, bbox, pageNumber, figureType, cardIndex, onNavigate, and open/onClose props. Render a Dialog (or custom portal div) with a dark blurred backdrop, centered image with max-height 90vh, the animated bbox overlay, zoom controls, and previous/next navigation. Use framer-motion for entry/exit and the zoom-to-figure transition.
+Add "View Source Page" button to the card list — in deck-detail.tsx, on each CardItem that has a sourceImage, render a small pill button (book icon + "Page N") in the card's top action area alongside the existing edit/delete buttons. Wire it to open SourcePageModal with the correct props. Pass the full list of visual cards so the modal's prev/next navigation works.
+Add page-number pill to text cards — in the same CardItem, for cards with pageNumber but no sourceImage, render a non-interactive muted "Page N" badge next to the Front/Back labels so users can always see the source page reference.
+Integrate into the study carousel — in the flashcard study section of deck-detail.tsx (the card-by-card study mode), add a small "View Source Page" ghost button at the bottom of the card face when card.sourceImage is set. Tapping it opens SourcePageModal.
+Animated bbox highlight — implement the highlight as an absolutely-positioned div overlay with a CSS keyframe animation: a slow pulsing glow (box-shadow + opacity oscillation) in the app's primary/violet accent color. Keep the red outline from CropCompare but upgrade it to a glowing violet ring for the modal context.
+Keyboard + accessibility — Escape closes modal, left/right arrow keys navigate cards, all interactive elements are keyboard-reachable with visible focus rings.
+Relevant files
+
+artifacts/anki-generator/src/components/crop-compare.tsx
+artifacts/anki-generator/src/pages/deck-detail.tsx:530-545,1280-1339
+artifacts/anki-generator/src/components/ui/dialog.tsx

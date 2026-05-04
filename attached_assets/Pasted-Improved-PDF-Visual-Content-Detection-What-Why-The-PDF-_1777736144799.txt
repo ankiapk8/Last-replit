@@ -1,0 +1,34 @@
+Improved PDF Visual Content Detection
+
+What & Why
+
+The PDF extraction pipeline is good at detecting embedded raster images (photos, scans) but completely blind to vector-drawn content — flowcharts, diagrams, decision trees, bar/line charts, anatomical schematics, and tables drawn as PDF vector paths. When a page has no raster images, the AI is told "NO embedded raster images detected" and is less likely to generate visual cards even when a rich diagram exists. Additionally, the rendering resolution and AI vision model can be upgraded for better accuracy on complex medical figures.
+
+Done looks like
+
+Flowcharts and algorithm diagrams drawn as PDF vector paths are detected as regions, and the AI receives positive region hints for them (same as raster images)
+Pages with dense vector drawing clusters are rendered at higher resolution before being sent to the AI
+Visual cards are reliably generated for flowcharts, decision trees, pathology diagrams, and vector charts that previously produced "NO embedded raster images detected" false-negatives
+The AI vision model used for visual card generation is upgraded to a more capable model (from google/gemma-3-27b-it:free) for better accuracy on complex scientific and medical figures
+The REGION_OVERLAP_RATIO and bbox-snapping logic is tuned so that correctly-identified figures aren't dropped just because the AI's bbox is slightly offset from the detected region
+A multi-pass retry is performed for pages that have detected regions (raster or vector) but where the AI returned zero visual cards — the retry sends only that page with an explicit instruction to focus on the listed regions
+The OCR render scale for server-side extraction is raised from 2× to 3× so text embedded in diagrams and flowcharts is legible to the AI
+Out of scope
+
+Full table-structure extraction (e.g. converting a PDF table to JSON — that's a separate feature)
+Support for encrypted or password-protected PDFs
+Client-side rendering quality changes (only server-side and AI pipeline)
+Steps
+
+Add vector region detection — in pdf-extraction.ts (client), extend detectPageImageRegions to also walk path-construction operators (constructPath, paintFormXObjectByName, fill and stroke ops). Cluster nearby path operations into bounding rectangles using a simple grid-scan: divide the page into a grid and find cells with high path density; merge adjacent dense cells into one bounding region. Tag these regions with a source: "vector" flag distinct from source: "raster".
+Tune region filtering thresholds — raise the minimum merged region size slightly (e.g. w >= 0.08 && h >= 0.06) so icon-sized decorations are ignored but chart axes and small diagrams are kept. Lower REGION_OVERLAP_RATIO in generate.ts from 0.25 to 0.15 so AI bboxes that are only slightly off from a detected region still get snapped instead of dropped.
+Adaptive page render resolution — in pdf-extraction.ts, detect if a page has vector-dense regions or large raster regions covering > 20% of the page area. For those pages, render at IMAGE_WIDTH = 1600 instead of 1100. For text-only pages keep 1100 to save bandwidth.
+Upgrade the vision model — in generate.ts (generateVisualCardsForBatch), change the model from google/gemma-3-27b-it:free to google/gemini-2.0-flash-001 (or google/gemini-flash-1.5) which has significantly better visual reasoning for scientific figures. Keep the existing prompt; the model swap alone will improve flowchart/diagram recognition.
+Multi-pass retry for skipped visual pages — in generateAllVisualCards, after the first pass, identify pages that had ≥1 detected region (raster or vector) but produced zero cards. Re-run a second focused pass on those pages only, with a tighter prompt that explicitly shows the listed regions and tells the model each region IS a real figure it must create a card for.
+Raise OCR render scale — in extract-pdf.ts (server), increase OCR_SCALE from 2 to 3 and MAX_OCR_DIMENSION from 2200 to 3200 so labels inside diagrams and flowchart text are legible to Tesseract and to the AI vision model.
+Surface detection stats to the client — extend the /extract-pdf response and the client's PdfExtractionResult to include a pageHasVisuals: boolean[] array (true if the page has ≥1 detected region) so the generate-form can show the user an indicator of which pages have figures before generation starts.
+Relevant files
+
+artifacts/anki-generator/src/lib/pdf-extraction.ts
+artifacts/api-server/src/routes/extract-pdf.ts
+artifacts/api-server/src/routes/generate.ts:1-35,511-712

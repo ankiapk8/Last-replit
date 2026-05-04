@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: anki-generator
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: STATIC_DIR
+        value: /app/public
+      - key: DATABASE_URL
+        fromDatabase:
+          name: anki-generator-db
+          property: connectionString
+      - key: AI_INTEGRATIONS_OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+databases:
+  - name: anki-generator-db
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "16"
+    ipAllowList: []

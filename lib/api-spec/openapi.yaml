@@ -1,0 +1,628 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification for Anki Card Generator
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: decks
+    description: Deck operations
+  - name: cards
+    description: Card operations
+  - name: generate
+    description: AI card generation operations
+  - name: planner
+    description: Study planner operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /decks:
+    get:
+      operationId: listDecks
+      tags: [decks]
+      summary: List all decks
+      responses:
+        "200":
+          description: List of decks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Deck"
+    post:
+      operationId: createDeck
+      tags: [decks]
+      summary: Create a new deck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeckBody"
+      responses:
+        "201":
+          description: Created deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+        "400":
+          description: Bad request
+
+  /decks/{id}:
+    get:
+      operationId: getDeck
+      tags: [decks]
+      summary: Get a deck by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateDeck
+      tags: [decks]
+      summary: Update a deck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeckBody"
+      responses:
+        "200":
+          description: Updated deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deck"
+        "400":
+          description: Bad request
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDeck
+      tags: [decks]
+      summary: Delete a deck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /decks/{id}/cards:
+    get:
+      operationId: listDeckCards
+      tags: [cards]
+      summary: List cards for a deck
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Card"
+
+  /cards/{id}:
+    patch:
+      operationId: updateCard
+      tags: [cards]
+      summary: Update a card
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCardBody"
+      responses:
+        "200":
+          description: Updated card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Card"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteCard
+      tags: [cards]
+      summary: Delete a card
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /generate:
+    post:
+      operationId: generateCards
+      tags: [generate]
+      summary: Generate Anki cards from text content
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateCardsBody"
+      responses:
+        "201":
+          description: Generated cards saved to a deck
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateCardsResponse"
+        "400":
+          description: Bad request
+
+  /topics:
+    get:
+      operationId: getAllTopics
+      tags: [planner]
+      summary: Get all study topics for the current user
+      responses:
+        "200":
+          description: Topics by storage key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetAllTopicsResponse"
+        "401":
+          description: Not authenticated
+
+  /topics/{storageKey}:
+    put:
+      operationId: upsertTopics
+      tags: [planner]
+      summary: Save study topics for a storage key
+      parameters:
+        - name: storageKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertTopicsBody"
+      responses:
+        "200":
+          description: Saved topics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpsertTopicsResponse"
+        "400":
+          description: Invalid request body
+        "401":
+          description: Not authenticated
+
+  /generate-qbank:
+    post:
+      operationId: generateQbank
+      tags: [generate]
+      summary: Generate a Question Bank (MCQ-only deck) from text content
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateQbankBody"
+      responses:
+        "201":
+          description: Generated MCQ cards saved to a question bank
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateCardsResponse"
+        "400":
+          description: Bad request
+
+  /generations:
+    get:
+      operationId: listGenerations
+      tags: [generations]
+      summary: List recent card generation runs
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Generation history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Generation"
+    delete:
+      operationId: clearGenerations
+      tags: [generations]
+      summary: Clear all generation history
+      responses:
+        "200":
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+
+  /decks/{id}/export:
+    get:
+      operationId: exportDeck
+      tags: [decks]
+      summary: Export deck as CSV text for Anki import
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CSV export of deck cards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportDeckResponse"
+        "404":
+          description: Not found
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Generation:
+      type: object
+      properties:
+        id:
+          type: integer
+        deckName:
+          type: string
+        deckType:
+          type: string
+        status:
+          type: string
+          description: "success | error | cancelled"
+        cardsGenerated:
+          type: integer
+        pageCount:
+          type: integer
+        durationMs:
+          type: integer
+        customPrompt:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        startedAt:
+          type: string
+        completedAt:
+          type: ["string", "null"]
+      required:
+        - id
+        - deckName
+        - deckType
+        - status
+        - cardsGenerated
+        - pageCount
+        - durationMs
+        - startedAt
+
+    Deck:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        parentId:
+          type: ["integer", "null"]
+        kind:
+          type: string
+          enum: [deck, qbank]
+          description: "deck = flashcard deck (default), qbank = MCQ-only question bank"
+        cardCount:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - cardCount
+        - createdAt
+
+    CreateDeckBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        parentId:
+          type: ["integer", "null"]
+        kind:
+          type: string
+          enum: [deck, qbank]
+      required:
+        - name
+
+    Card:
+      type: object
+      properties:
+        id:
+          type: integer
+        deckId:
+          type: integer
+        front:
+          type: string
+        back:
+          type: string
+        tags:
+          type: ["string", "null"]
+        image:
+          type: ["string", "null"]
+        sourceImage:
+          type: ["string", "null"]
+        bbox:
+          type: ["string", "null"]
+        cardType:
+          type: ["string", "null"]
+          description: "basic | mcq"
+        choices:
+          type: ["array", "null"]
+          items:
+            type: string
+          description: "Multiple-choice options (in order: A, B, C, D, …). Present only when cardType is 'mcq'."
+        correctIndex:
+          type: ["integer", "null"]
+          description: "0-based index into choices for the correct option. Present only when cardType is 'mcq'."
+        pageNumber:
+          type: ["integer", "null"]
+          description: "1-based source PDF page number this card was generated from, or null when no page is associated."
+        createdAt:
+          type: string
+      required:
+        - id
+        - deckId
+        - front
+        - back
+        - createdAt
+
+    UpdateDeckBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        parentId:
+          type: ["integer", "null"]
+        kind:
+          type: string
+          enum: [deck, qbank]
+
+    UpdateCardBody:
+      type: object
+      properties:
+        front:
+          type: string
+        back:
+          type: string
+        tags:
+          type: ["string", "null"]
+
+    GenerateCardsBody:
+      type: object
+      properties:
+        text:
+          type: string
+        deckName:
+          type: string
+        cardCount:
+          type: integer
+          description: Target text card count (used when deckType is "text" or "both")
+        visualCardCount:
+          type: integer
+          description: Target visual card count (used when deckType is "visual" or "both")
+        deckType:
+          type: string
+          enum: [text, visual, both]
+          description: Whether to create a text-only deck, a visual deck, or both as separate decks
+        parentId:
+          type: ["integer", "null"]
+        pageImages:
+          type: array
+          items:
+            type: string
+        pageTexts:
+          type: array
+          items:
+            type: string
+          description: "Per-page extracted text (index 0 = page 1). When provided, the server tracks which PDF page each text card came from and stores it as pageNumber so the merged deck can be sorted by source page."
+        pageImageRegions:
+          type: array
+          description: "Per-page list of detected embedded image regions (raster images present in the PDF). Each entry is the list of regions on that page, where each region is {x,y,w,h} normalized 0..1 with origin top-left. Used to snap visual-card crops to real images and reject AI bboxes that point at prose."
+          items:
+            type: array
+            items:
+              type: object
+              properties:
+                x:
+                  type: number
+                y:
+                  type: number
+                w:
+                  type: number
+                h:
+                  type: number
+              required: [x, y, w, h]
+        customPrompt:
+          type: string
+          description: Optional user instructions appended to the system prompt to steer card generation (e.g. "focus on dosages", "phrase as MCQs", "for a Year 1 medical student")
+      required:
+        - text
+        - deckName
+
+    GenerateQbankBody:
+      type: object
+      properties:
+        text:
+          type: string
+        deckName:
+          type: string
+        questionCount:
+          type: integer
+          description: Target number of MCQ questions to generate
+        parentId:
+          type: ["integer", "null"]
+        customPrompt:
+          type: string
+          description: Optional user instructions appended to the system prompt to steer question generation (e.g. "USMLE Step 1 style", "high-yield clinical vignettes only")
+      required:
+        - text
+        - deckName
+
+    GenerateCardsResponse:
+      type: object
+      properties:
+        deck:
+          $ref: "#/components/schemas/Deck"
+        visualDeck:
+          $ref: "#/components/schemas/Deck"
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/Card"
+        generatedCount:
+          type: integer
+      required:
+        - cards
+        - generatedCount
+
+    ExportDeckResponse:
+      type: object
+      properties:
+        deckName:
+          type: string
+        csv:
+          type: string
+        cardCount:
+          type: integer
+      required:
+        - deckName
+        - csv
+        - cardCount
+
+    GetAllTopicsResponse:
+      type: object
+      properties:
+        topics:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/Topic"
+      required:
+        - topics
+
+    UpsertTopicsBody:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: "#/components/schemas/Topic"
+      required:
+        - topics
+
+    UpsertTopicsResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: "#/components/schemas/Topic"
+      required:
+        - topics
+
+    Topic:
+      type: object
+      additionalProperties: true

@@ -1,0 +1,13 @@
+{
+  "targetUrl": "https://8f35841e-200a-4a1a-ae20-6e23452c89e0-00-2fq1fndljt77f.pike.replit.dev",
+  "host": "8f35841e-200a-4a1a-ae20-6e23452c89e0-00-2fq1fndljt77f.pike.replit.dev",
+  "additionalHosts": [],
+  "packageId": "app.replit.ankigen",
+  "versionName": "2.0-bundled",
+  "versionCode": 2,
+  "sizeBytes": 8270888,
+  "builtAt": "2026-04-26T10:30:08Z",
+  "kind": "bundled",
+  "apiBase": "https://8f35841e-200a-4a1a-ae20-6e23452c89e0-00-2fq1fndljt77f.pike.replit.dev/api",
+  "sourceHash": "29b01a4e61c6d4e8"
+}

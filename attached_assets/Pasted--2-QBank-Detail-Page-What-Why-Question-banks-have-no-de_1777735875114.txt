@@ -1,0 +1,33 @@
+#2 - QBank Detail Page
+
+What & Why
+
+Question banks have no detail page. The QbankRow links to /qbanks/:id but that route currently goes nowhere. Users need to see, browse, edit, and delete the individual MCQs inside a question bank.
+
+Done looks like
+
+Navigating to /qbanks/:id loads the question bank's name, description, and all its questions
+Each question shows: the question stem (front), answer explanation (back), lettered choices (A–D), the correct answer highlighted, tags, and page number
+Users can edit any question inline (stem, explanation, tags) and save changes with PATCH /api/questions/:id
+Users can delete individual questions with confirmation
+A "Practice" button links to /practice-qbank/:id
+A breadcrumb links back to /decks (QBanks tab)
+Empty state shown when a qbank has no questions yet, with a prompt to generate some
+Page handles loading skeletons and error states gracefully
+Out of scope
+
+Adding new questions manually from this page (generation via AI is the creation path)
+Bulk question operations
+Steps
+
+Create the page component — new file src/pages/qbank-detail.tsx using useParams to get the id, useGetQbank for metadata, and useListQbankQuestions for the question list.
+Question list UI — render each question as an expandable card showing stem, choices, correct answer, explanation, tags, and page number. Collapsed view shows just the stem and answer count.
+Inline edit — clicking "Edit" on a question opens an inline form (or a small drawer/dialog) for stem, explanation, and tags. Saves via useUpdateQuestion and invalidates the questions query key.
+Delete — a trash button on each question asks for confirmation then calls useDeleteQuestion, invalidating both the questions list and the qbank query (to refresh questionCount).
+Register route — update App.tsx to import QbankDetail and map it to /qbanks/:id (replacing the placeholder from the CRUD-fixes task).
+Relevant files
+
+artifacts/anki-generator/src/App.tsx
+artifacts/anki-generator/src/pages/deck-detail.tsx
+artifacts/anki-generator/src/pages/practice.tsx
+lib/api-client-react/src/qbanks.ts

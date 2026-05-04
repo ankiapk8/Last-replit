@@ -1,0 +1,30 @@
+Dashboard QBank Stats Integration
+
+What & Why
+
+The Dashboard only surfaces flashcard deck data. Now that QBanks are a first-class feature with their own table, the dashboard should also reflect question bank progress so users see their full study picture at a glance.
+
+Done looks like
+
+A "Question Banks" summary block appears on the Dashboard (alongside the existing Decks block) showing total QBanks and total MCQs
+A "Recent Question Banks" section lists the last 3–5 generated qbanks with name, question count, and a link to /qbanks/:id
+The "Recent sessions" activity feed distinguishes QBank practice sessions (violet Stethoscope icon) from flashcard sessions (book icon)
+The dashboard's top-level stats bar ("X decks · Y cards") also mentions MCQs when there are any qbanks: e.g. "3 decks · 120 cards · 2 question banks · 45 MCQs"
+Loading states for qbank data use skeletons consistent with the existing deck skeletons
+Out of scope
+
+Per-qbank study heatmaps or performance charts
+Streaks and per-day stats for QBank sessions (those are handled by the practice page's session save logic)
+Steps
+
+Fetch qbank data on Dashboard — add useListQbanks to the Dashboard component.
+Compute qbank summary stats — derive totalQbanks, totalMcqs, and recentQbanks (last 5 by createdAt) from the qbanks list.
+Stats bar update — extend the header subtitle text to include qbank counts when non-zero.
+QBank summary card — add a stats card styled with violet accents (matching the QBank tab in Decks) showing total question banks and MCQs alongside the existing Decks / Cards / Streak cards.
+Recent QBanks section — add a "Recent Question Banks" list below the existing "Recent Decks" list; each row shows name, MCQ count badge, creation date, and links to /qbanks/:id.
+Session feed icon — detect QBank sessions in the recent-sessions list and render the Stethoscope icon in violet instead of the BookOpen icon, so users can tell which type of session it was.
+Relevant files
+
+artifacts/anki-generator/src/pages/dashboard.tsx
+lib/api-client-react/src/qbanks.ts
+artifacts/anki-generator/src/lib/study-stats.ts

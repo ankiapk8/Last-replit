@@ -1,0 +1,118 @@
+Bug Fixes & Critical UX Issues
+
+What & Why
+
+A thorough audit of the codebase revealed several real bugs and UX issues that hurt the product's polish and correctness. These are not feature requests — they are broken or misleading behaviours that need to be fixed.
+
+Done looks like
+
+All items below are resolved and verified to work correctly.
+
+Bug 1 — Practice mode last answer is missing from results (confirmed bug)
+
+File: artifacts/anki-generator/src/pages/practice.tsx, handleNext (line ~314)
+
+Root cause: When the last card is answered, handleConfirm calls setAnswers(prev => [...prev, newEntry]) (async React state update). Then handleNext reads const newAnswers = answers immediately after — but answers is the pre-update snapshot from the closure, so the last answer is never included when onDone(newAnswers) fires. The results screen will always show N-1 answers for an N-card practice session.
+
+Fix: Change handleNext to use a ref or receive the latest answers via a callback. Simplest fix: merge the confirm + next step into one handler so the final answer is appended locally before calling onDone:
+
+const handleConfirmAndMaybeNext = useCallback(() => {
+  if (selected === null || revealed) return;
+  const isCorrect = selected === current.correctIndex;
+  const newEntry = { cardIndex: index, selectedIndex: selected, correct: isCorrect };
+  const newAnswers = [...answers, newEntry];
+  setAnswers(newAnswers);
+  setRevealed(true);
+  if (!isCorrect) { setWrongFlash(true); setTimeout(() => setWrongFlash(false), 700); }
+  // also handle auto-advance if this is the last card
+  if (index + 1 >= total) {
+    setTimeout(() => onDone(newAnswers), 600); // small delay for reveal animation
+  }
+}, [selected, revealed, current, index, answers, total, onDone]);
+Separate the handleNext (advance without confirm) from the confirm action to keep keyboard shortcuts working.
+
+Bug 2 — "Cancelled" generation status shows a green success badge
+
+File: artifacts/anki-generator/src/pages/history.tsx, StatusBadge component (line ~40)
+
+Root cause: The cancelled branch renders an emerald-green badge identical to the success branch, with a <Ban> icon. Visually it looks like a successful run.
+
+Fix: Change the cancelled badge to amber/yellow styling:
+
+<Badge variant="outline" className="gap-1 border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+  <Ban className="h-3 w-3" /> Cancelled
+</Badge>
+Bug 3 — 7-day activity chart: "known" and "still learning" bars are both green (visually indistinguishable)
+
+File: artifacts/anki-generator/src/pages/dashboard.tsx (lines ~178-188)
+
+Root cause: Known bars use bg-green-500/80 and still-learning bars use bg-emerald-400/70 — both solid green, essentially the same colour. The legend is confusing.
+
+Fix: Change still-learning bars to orange/amber:
+
+// Still-learning bar
+className="w-full rounded-t-sm bg-orange-400/70"
+// Legend
+<div className="h-2.5 w-2.5 rounded-sm bg-orange-400/70" />
+<span className="text-xs text-muted-foreground">Still learning</span>
+UX Issue 4 — Practice session results "Back to Library" goes to /decks, not back to the specific deck
+
+File: artifacts/anki-generator/src/pages/practice.tsx, ResultsView (line ~204)
+
+Fix: Pass the deckId to ResultsView and use <Link href={/decks/${deckId}}> for the back button so the user lands on the deck they just practiced, not the full library list.
+
+UX Issue 5 — Study mode keyboard shortcuts are invisible to users
+
+File: artifacts/anki-generator/src/pages/deck-detail.tsx, StudyMode component
+
+There are keyboard shortcuts (Space to flip, 1/2 to mark, arrow keys to navigate) but nothing tells users they exist.
+
+Fix: Add a small collapsible "Keyboard shortcuts" tooltip/popover in the study toolbar (a ? icon button) that shows:
+
+Key	Action
+Space / →	Flip / Next
+←	Previous
+1	Mark "Got it"
+2	Mark "Still learning"
+UX Issue 6 — History page has no navigation link; users must know the URL
+
+File: artifacts/anki-generator/src/components/layout.tsx
+
+The History page (/history) exists but has no link in the nav bar. Users only reach it via the Library page's overflow menu.
+
+Fix: Add a History nav link to navLinks in layout.tsx:
+
+{ href: "/history", label: "History", icon: History },
+Also import the History icon from lucide-react.
+
+UX Issue 7 — Practice mode doesn't save results to study-stats (dashboard shows no data for practice sessions)
+
+File: artifacts/anki-generator/src/pages/practice.tsx, Practice component (bottom of file where onDone receives answers)
+
+Practice sessions (MCQ mode) are completely invisible to the Dashboard and 7-day activity chart because saveSession from study-stats.ts is never called after a practice run finishes.
+
+Fix: In the Practice page, after onDone(answers) fires and ResultsView is shown, call saveSession:
+
+saveSession({
+  deckId: Number(id),
+  deckName: deck.name,
+  total: answers.length,
+  known: answers.filter(a => a.correct).length,
+  unknown: answers.filter(a => !a.correct).length,
+  completedAt: new Date().toISOString(),
+});
+This makes practice sessions visible on the Dashboard streak, 7-day chart, and Deck Progress tracker.
+
+UX Issue 8 — No React error boundary; any component crash shows a blank white screen
+
+Fix: Add a simple route-level ErrorBoundary component in src/components/error-boundary.tsx that catches render errors and shows a friendly "Something went wrong" panel with a reload button. Wrap <Router> in App.tsx with this boundary.
+
+Relevant files
+
+artifacts/anki-generator/src/pages/practice.tsx
+artifacts/anki-generator/src/pages/dashboard.tsx
+artifacts/anki-generator/src/pages/history.tsx
+artifacts/anki-generator/src/pages/deck-detail.tsx
+artifacts/anki-generator/src/components/layout.tsx
+artifacts/anki-generator/src/App.tsx
+artifacts/anki-generator/src/lib/study-stats.ts

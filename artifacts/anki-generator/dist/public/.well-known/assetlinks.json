@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.replit.ankicards",
+      "sha256_cert_fingerprints": [
+        "D9:3B:E1:04:86:1D:ED:10:FC:18:52:7C:4E:B2:27:05:3E:7B:69:E7:B9:65:B6:39:AD:FD:3F:18:67:69:43:6C"
+      ]
+    }
+  }
+]

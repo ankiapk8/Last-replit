@@ -1,0 +1,88 @@
+PPTX / Office File Extraction
+
+What & Why
+
+Users want to generate Anki cards from lecture slides and course presentations (.pptx, .ppt), not just PDFs and plain text. PPTX files are ZIP archives — the server already has jszip installed, which can unpack them without any new heavyweight dependency. Each slide's text, speaker notes, and embedded images (photos, diagrams, chart screenshots saved as PNG/JPEG within the file) are all extractable from the ZIP's XML and media folder. The result feeds into the existing text + visual card generation pipeline with no changes to the AI prompt layer.
+
+Done looks like
+
+Users can drag-and-drop or browse for .pptx files alongside .pdf and .txt
+Each slide is treated as a "page" — slide text + speaker notes become the pageTexts entry, embedded slide images become pageImages entries (same shape as the PDF pipeline output)
+The file pill in the generate form shows a "Slides" badge (presentation icon + slide count) instead of "pg" so users know their deck type
+Visual card generation works for PPTX just like PDFs — the AI sees each slide image, detects figures, and generates visual cards
+Text card generation works correctly — slide text and notes are combined per slide and fed to the generation prompt
+The accept attribute on the file input, drag-and-drop validation, and all user-facing error messages are updated to mention .pptx
+The server returns a clear error if the PPTX is corrupt, encrypted, or has no readable content
+DOCX (Word) files are supported as a secondary format — text is extracted per paragraph with reasonable page-break heuristics; no images (Word docs rarely have figure-heavy content in the Anki use case)
+Out of scope
+
+Full slide layout rendering (shapes, formatted text boxes, animations) — only embedded media images and text content are extracted, not a pixel-perfect slide render
+Old binary .ppt format (PowerPoint 97-2003) — too complex to parse without LibreOffice; show a friendly error asking users to convert to .pptx first
+.xlsx / spreadsheet extraction
+Architecture
+
+Client                            Server
+  │                                  │
+  ├─ detects isPptxFile(file)         │
+  ├─ sends file to POST /api/extract-office ──►
+  │                                  ├─ jszip.loadAsync(buffer)
+  │                                  ├─ parse ppt/slides/slide*.xml  → per-slide text
+  │                                  ├─ parse ppt/notesSlides/notesSlide*.xml → notes
+  │                                  ├─ parse ppt/slides/_rels/ → media mapping
+  │                                  ├─ extract ppt/media/ images → data URLs
+  │                                  └─ return { pageTexts[], pageImages[], numSlides }
+  ◄── { pageTexts, pageImages, numSlides }
+  │
+  └─ merges into FileEntry (same shape as PDF result)
+     → feeds into existing generateOne() call unchanged
+Steps
+
+1. Server — new /api/extract-office route (artifacts/api-server/src/routes/extract-office.ts)
+
+Accept multipart or raw body upload; multer filter allows .pptx and .docx MIME types
+Add fast-xml-parser (lightweight, no native deps) to parse XML: pnpm --filter @workspace/api-server add fast-xml-parser
+PPTX extraction (extractPptx(buffer)):
+jszip.loadAsync(buffer) to open the ZIP
+Sort ppt/slides/slide*.xml by slide number (numeric sort on the filename index)
+For each slide XML, walk the XML tree collecting all <a:t> text nodes into a single slide text string; also check for title shape (<p:ph type="title">) and prepend it as the first line
+Load the matching ppt/notesSlides/notesSlide*.xml (via _rels mapping) and append its text to the slide text, prefixed with [Speaker notes:]
+Load ppt/slides/_rels/slideN.xml.rels to find which ppt/media/* files are referenced by each slide (relationship type http://…/image)
+For each referenced media file that is a JPEG/PNG/GIF/WebP, read its bytes, encode as data:image/…;base64,…
+Return { pageTexts: string[], pageImages: string[], numSlides: number } — pageImages[i] is the first image found on slide i, or "" if none
+DOCX extraction (extractDocx(buffer)):
+jszip.loadAsync(buffer) → parse word/document.xml
+Walk <w:p> paragraph nodes; collect text; insert \n\n between paragraphs; split into ~800-char chunks as synthetic "pages"
+Return { pageTexts: string[], pageImages: [], numSlides: pageTexts.length }
+Register route in artifacts/api-server/src/routes/index.ts
+2. Client — file type helpers (artifacts/anki-generator/src/lib/pdf-extraction.ts)
+
+Add isPptxFile(file: File): boolean — checks .pptx extension and application/vnd.openxmlformats-officedocument.presentationml.presentation MIME type
+Add isDocxFile(file: File): boolean — checks .docx and corresponding MIME type
+Add isOfficeFile(file: File): boolean — isPptxFile || isDocxFile
+Export extractOffice(file: File, onProgress: ProgressCallback): Promise<PdfExtractionResult>:
+POST to /api/extract-office with the file as multipart form data
+Stream progress updates: "Uploading…" → "Parsing slides…" → "Done"
+Map the server response to PdfExtractionResult shape (same interface, pageImages for slides)
+On error, throw with a user-friendly message
+3. Client — generate form (artifacts/anki-generator/src/components/generate-form.tsx)
+
+Import isPptxFile, isDocxFile, isOfficeFile, extractOffice
+In processFile: add branch else if (isOfficeFile(file)) → call extractOffice and update FileEntry (same as PDF branch)
+In handleFileInput / handleDrop: remove the early rejection of non-PDF/non-TXT files; allow office files through
+Change file <input accept=".txt,.pdf,.pptx,.docx"> and update the drop-zone hint text to "Drop PDF, PPTX, DOCX or TXT files…"
+Update the file pill icon: use Presentation (lucide) icon for PPTX files, FileText for DOCX, keeping existing icons for PDF and TXT
+Update the "N pg" badge to show "N slides" for PPTX files and "N pages" for DOCX
+Show the visual-card count input for PPTX files that returned images (same condition: pageImages.length > 0)
+4. Error handling
+
+If the file is a .ppt (old binary format): return HTTP 422 with "Old .ppt format is not supported. Please re-save as .pptx in PowerPoint or Google Slides and try again."
+If the ZIP has no slide XML files (corrupt or wrong format): return 422 with "Could not find any slides in this file."
+If all slides are empty (zero text, zero images): return 422 with "No readable content found in this presentation."
+Client shows these messages in the file pill error state (same status: "error" flow already exists)
+Relevant files
+
+artifacts/api-server/src/routes/extract-office.ts ← new file
+artifacts/api-server/src/routes/index.ts
+artifacts/api-server/package.json
+artifacts/anki-generator/src/lib/pdf-extraction.ts
+artifacts/anki-generator/src/components/generate-form.tsx

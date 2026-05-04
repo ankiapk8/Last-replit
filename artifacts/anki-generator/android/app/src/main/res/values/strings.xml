@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AnkiGen</string>
+    <string name="title_activity_main">AnkiGen</string>
+    <string name="package_name">app.replit.ankigen</string>
+    <string name="custom_url_scheme">app.replit.ankigen</string>
+</resources>

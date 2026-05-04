@@ -1,0 +1,13 @@
+{
+  "targetUrl": "https://anki--ankiapk9.replit.app",
+  "host": "anki--ankiapk9.replit.app",
+  "additionalHosts": [],
+  "packageId": "app.replit.ankigen",
+  "versionName": "2.0-bundled",
+  "versionCode": 2,
+  "sizeBytes": 8270796,
+  "builtAt": "2026-04-26T10:30:29Z",
+  "kind": "bundled",
+  "apiBase": "https://anki--ankiapk9.replit.app/api",
+  "sourceHash": "29b01a4e61c6d4e8"
+}

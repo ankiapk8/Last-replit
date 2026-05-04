@@ -1,0 +1,202 @@
+[
+  {
+    "slot": "published",
+    "host": "anki--ankiapk9.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-26T10:30:08.868Z",
+    "finishedAt": "2026-04-26T10:30:29.437Z",
+    "durationMs": 20569,
+    "error": null,
+    "sizeBytes": 8270796
+  },
+  {
+    "slot": "dev",
+    "host": "8f35841e-200a-4a1a-ae20-6e23452c89e0-00-2fq1fndljt77f.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-26T10:29:47.415Z",
+    "finishedAt": "2026-04-26T10:30:08.860Z",
+    "durationMs": 21445,
+    "error": null,
+    "sizeBytes": 8270888
+  },
+  {
+    "slot": "published",
+    "host": "anki--ankiapk9.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-26T10:29:08.229Z",
+    "finishedAt": "2026-04-26T10:29:27.571Z",
+    "durationMs": 19342,
+    "error": null,
+    "sizeBytes": 8268992
+  },
+  {
+    "slot": "dev",
+    "host": "8f35841e-200a-4a1a-ae20-6e23452c89e0-00-2fq1fndljt77f.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-26T10:28:47.413Z",
+    "finishedAt": "2026-04-26T10:29:08.222Z",
+    "durationMs": 20809,
+    "error": null,
+    "sizeBytes": 8269084
+  },
+  {
+    "slot": "published",
+    "host": "anki--ankiapk9.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-26T10:24:03.440Z",
+    "finishedAt": "2026-04-26T10:24:25.848Z",
+    "durationMs": 22408,
+    "error": null,
+    "sizeBytes": 8264004
+  },
+  {
+    "slot": "dev",
+    "host": "8f35841e-200a-4a1a-ae20-6e23452c89e0-00-2fq1fndljt77f.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-26T10:21:47.395Z",
+    "finishedAt": "2026-04-26T10:24:03.440Z",
+    "durationMs": 136045,
+    "error": null,
+    "sizeBytes": 8264048
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:58:30.997Z",
+    "finishedAt": "2026-04-23T14:58:46.513Z",
+    "durationMs": 15516,
+    "error": null,
+    "sizeBytes": 8255192
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:58:11.266Z",
+    "finishedAt": "2026-04-23T14:58:30.989Z",
+    "durationMs": 19723,
+    "error": null,
+    "sizeBytes": 8255288
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:57:29.530Z",
+    "finishedAt": "2026-04-23T14:57:47.881Z",
+    "durationMs": 18351,
+    "error": null,
+    "sizeBytes": 8255192
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:57:11.265Z",
+    "finishedAt": "2026-04-23T14:57:29.523Z",
+    "durationMs": 18258,
+    "error": null,
+    "sizeBytes": 8255336
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:55:44.696Z",
+    "finishedAt": "2026-04-23T14:55:59.054Z",
+    "durationMs": 14358,
+    "error": null,
+    "sizeBytes": 8255208
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:55:11.251Z",
+    "finishedAt": "2026-04-23T14:55:44.694Z",
+    "durationMs": 33443,
+    "error": null,
+    "sizeBytes": 8255260
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:52:51.912Z",
+    "finishedAt": "2026-04-23T14:53:10.125Z",
+    "durationMs": 18213,
+    "error": null,
+    "sizeBytes": 8255156
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:52:31.134Z",
+    "finishedAt": "2026-04-23T14:52:49.672Z",
+    "durationMs": 18538,
+    "error": null,
+    "sizeBytes": 8255252
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:52:11.122Z",
+    "finishedAt": "2026-04-23T14:52:31.134Z",
+    "durationMs": 20012,
+    "error": null,
+    "sizeBytes": 8253608
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:51:51.908Z",
+    "finishedAt": "2026-04-23T14:52:11.115Z",
+    "durationMs": 19207,
+    "error": null,
+    "sizeBytes": 8253704
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:48:00.249Z",
+    "finishedAt": "2026-04-23T14:48:19.385Z",
+    "durationMs": 19136,
+    "error": null,
+    "sizeBytes": 8253356
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:47:41.030Z",
+    "finishedAt": "2026-04-23T14:48:00.249Z",
+    "durationMs": 19219,
+    "error": null,
+    "sizeBytes": 8253236
+  },
+  {
+    "slot": "dev",
+    "host": "4c19c504-2556-4c48-b690-fbd465951c4f-00-332upby7lhirk.pike.replit.dev",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:47:21.821Z",
+    "finishedAt": "2026-04-23T14:47:41.021Z",
+    "durationMs": 19200,
+    "error": null,
+    "sizeBytes": 8253312
+  },
+  {
+    "slot": "published",
+    "host": "anki-1--ankiapk5.replit.app",
+    "status": "ready",
+    "startedAt": "2026-04-23T14:46:00.273Z",
+    "finishedAt": "2026-04-23T14:46:19.432Z",
+    "durationMs": 19159,
+    "error": null,
+    "sizeBytes": 8253272
+  }
+]

@@ -1,0 +1,128 @@
+AI-Generated Mind Map in Study Mode
+
+What & Why
+
+While studying a deck, users have no visual overview of how topics connect. An AI-generated mind map — always visible on the right side of the study screen — gives learners a mental scaffold, shows where the current card sits within the overall topic hierarchy, and helps retention by building associative memory. The map updates its highlighted node as the user navigates cards.
+
+Done looks like
+
+When a user enters study mode, a collapsible "Mind Map" panel appears on the right side of the screen (desktop) or as a bottom drawer (mobile)
+A single "Generate Map" button triggers the AI to analyze all card fronts/backs and return a structured topic hierarchy as JSON; this result is cached in localStorage per deck so subsequent visits are instant
+The mind map renders as an interactive SVG with:
+A root node (deck name) on the left, branches fanning out to the right (horizontal tree layout)
+Up to 3 levels deep: root → main topics (L1, up to 8) → sub-topics (L2, up to 5 per L1) → key points (L3 leaves, up to 3 per L2)
+Each L1 branch has a distinct accent color (violet, sky, emerald, amber, rose, indigo, teal, orange)
+Smooth cubic bezier SVG path edges connecting all nodes, colored with the branch color at reduced opacity
+Nodes are animated in sequentially using framer-motion staggered AnimatePresence so the map "grows" outward like XMind opening a file
+Edge paths are drawn with a stroke-dashoffset CSS animation so they appear to draw themselves
+The node matching the current flashcard's topic glows with a pulsing ring and scales up slightly; navigating cards updates the highlight without re-rendering the whole map
+Clicking any node in the map jumps the card deck to the first card associated with that topic
+A small zoom/pan control (three buttons: zoom-in, zoom-out, fit-to-view) handles maps that overflow the panel
+The panel can be toggled open/closed with a button in the study mode toolbar; preference is persisted in localStorage
+On mobile the map is accessible via a "Map" button that opens a full-screen bottom Drawer (Vaul, already installed)
+The loading state shows placeholder nodes with a shimmer/pulse animation while waiting for AI
+Dark mode is fully supported (all colors derive from branch palette with dark-mode variants)
+Out of scope
+
+Editing the mind map manually (read-only)
+Exporting the map as an image or XMind file
+Real-time collaborative maps
+Storing the map in the database (localStorage is sufficient)
+Architecture
+
+[StudyMode]
+  ├── [CardPanel] (flex-1, existing study card UI)
+  └── [MindMapPanel] (w-[380px], right side, collapsible)
+        ├── generates via POST /api/mind-map (cards[] → MindMapTree JSON)
+        ├── caches result in localStorage: ankigen_mindmap_{deckId}
+        └── renders [MindMapSvg] with framer-motion animations
+              └── highlights activeNodeId derived from current card index
+Steps
+
+1. Server — /api/mind-map route (artifacts/api-server/src/routes/mind-map.ts)
+
+Accept POST /api/mind-map with JSON body { deckName: string, cards: { front: string, back: string }[] }
+Truncate cards to max 120 front+back pairs to stay within token limits; if more cards exist, sample evenly across the deck
+Send a single non-streaming chat completion using openai/gpt-oss-120b:free (same model as explain route)
+System prompt instructs the AI to analyze the cards and return ONLY a valid JSON object:
+{
+  "root": "<deck name>",
+  "children": [
+    {
+      "id": "L1-0",
+      "label": "<Main Topic>",
+      "children": [
+        {
+          "id": "L1-0-L2-0",
+          "label": "<Sub-topic>",
+          "cardIndices": [0, 3, 7],
+          "children": [
+            { "id": "L1-0-L2-0-L3-0", "label": "<Key point>", "cardIndices": [0], "children": [] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+cardIndices is an array of 0-based indices into the original cards array that this node represents
+Parse the JSON response; if parsing fails, retry once with a stricter prompt asking for JSON only
+Return { tree: MindMapTree } with appropriate HTTP error codes on failure
+Register route in artifacts/api-server/src/routes/index.ts
+2. Client — Mind map renderer (artifacts/anki-generator/src/components/mind-map-svg.tsx)
+
+Pure SVG component, no new npm packages (framer-motion already installed)
+Accept props: tree: MindMapTree, activeCardIndex: number, onNodeClick: (cardIndices: number[]) => void
+Layout algorithm (computed in a useMemo):
+Place root at (0, centerY)
+Assign each L1 branch an equal vertical slice of the total height
+Recursively place children centered within their parent's slice
+Horizontal spacing: root at x=0, L1 at x=180, L2 at x=360, L3 at x=520 (px)
+Return a flat list of { node, x, y, parentX, parentY, color, depth } records
+SVG edges: For each node with a parent, render an SVG <path> with a cubic bezier M parentX,parentY C midX,parentY midX,y x,y. Animate with framer-motion motion.path using pathLength from 0 to 1 with stagger delay based on node depth.
+Nodes: Each node is a motion.g containing a rect (rounded) and text. Animate with initial={{ opacity: 0, scale: 0.5 }} → animate={{ opacity: 1, scale: 1 }} with stagger via transition.delay = depth * 0.1 + siblingIndex * 0.05.
+Active highlight: Nodes whose cardIndices include activeCardIndex get an extra motion.rect ring that animates opacity: [0.4, 1, 0.4] in a loop (pulse) and a subtle drop shadow filter.
+Colors: Each L1 branch gets a color from a 8-color palette array ["#8b5cf6","#0ea5e9","#10b981","#f59e0b","#f43f5e","#6366f1","#14b8a6","#f97316"]. Children inherit parent color at 0.85 alpha.
+Node size: root = 160×44px pill; L1 = 140×36px; L2 = 120×30px; L3 = 100×24px (smaller text too)
+Zoom/pan: Wrap SVG in a <div style={{ overflow: "hidden" }}> and apply a CSS transform: scale(zoom) translate(panX, panY) via state; three buttons (−, +, ⊡ fit) control zoom (0.4–1.6). Fit-to-view computes the scale needed to fit the tree bounding box.
+Export computeMindMapLayout as a pure function for testability.
+3. Client — Mind map panel (artifacts/anki-generator/src/components/mind-map-panel.tsx)
+
+Stateful wrapper that manages: tree | null, isLoading, error, zoom, panOffset
+On mount, check localStorage.getItem("ankigen_mindmap_" + deckId) — if found and valid, parse and set tree immediately
+"Generate Mind Map" button (shows when tree === null && !isLoading): calls fetch(apiUrl("api/mind-map"), { method: "POST", body: JSON.stringify({ deckName, cards: cards.map(c => ({ front: c.front, back: c.back })) }) }), sets tree on success, saves to localStorage, sets error on failure
+Loading state: 3 placeholder rows of rounded rectangles with animate-pulse shimmer, styled to look like mind map nodes
+Error state: concise error message + "Try again" button
+Render <MindMapSvg> when tree is available
+Header bar: "Mind Map" title + a "Regenerate" icon button (refresh icon) that clears cache and re-fetches + a collapse/close button (× on desktop, used to collapse the panel)
+Panel background: bg-background/95 backdrop-blur-sm border-l border-border/40 (frosted glass feel)
+4. StudyMode layout update (artifacts/anki-generator/src/pages/deck-detail.tsx)
+
+Add state: const [showMap, setShowMap] = useState(() => localStorage.getItem("ankigen_showMap") !== "false")
+Change the StudyMode return JSX from a single-column div to:
+<div className="flex gap-5 items-start">
+  <div className="flex-1 min-w-0 space-y-6">
+    {/* existing card content */}
+  </div>
+  {showMap && (
+    <div className="hidden xl:block w-[380px] shrink-0 sticky top-4">
+      <MindMapPanel deckId={deckId} deckName={deckName} cards={cards} activeCardIndex={index} onNodeClick={jumpToCard} />
+    </div>
+  )}
+</div>
+Add a "Map" toggle button to the study toolbar (between Shuffle and Restart):
+<Button variant={showMap ? "secondary" : "ghost"} size="sm" onClick={toggleMap} className="gap-1.5 h-8 text-xs hidden xl:flex">
+  <Network className="h-3.5 w-3.5" /> Map
+</Button>
+Add a "Map" button for mobile that opens a Vaul <Drawer> containing <MindMapPanel> at full screen height
+jumpToCard(cardIndices): sets index to cardIndices[0], sets revealed(false), sets mcqSelected(null) — works with existing state
+5. Icons & imports
+
+Import Network from lucide-react for the Map toggle button (already in the lucide package)
+No new npm packages needed (framer-motion ✓, vaul ✓)
+Relevant files
+
+artifacts/api-server/src/routes/mind-map.ts ← new
+artifacts/api-server/src/routes/index.ts
+artifacts/anki-generator/src/components/mind-map-svg.tsx ← new
+artifacts/anki-generator/src/components/mind-map-panel.tsx ← new
+artifacts/anki-generator/src/pages/deck-detail.tsx (StudyMode function, lines 189–760)

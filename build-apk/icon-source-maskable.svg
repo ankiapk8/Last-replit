@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="55%" stop-color="#22C55E"/>
+      <stop offset="100%" stop-color="#15803D"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.35" r="0.7">
+      <stop offset="0%" stop-color="#A7F3D0" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#A7F3D0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="book" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#ECFDF5"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FEF9C3"/>
+      <stop offset="100%" stop-color="#BEF264"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="10" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="sparkglow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- full-bleed background (maskable: covers entire square; mask cuts shape) -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <!-- artwork inside safe zone: scaled to 0.66 about center (512,512) -->
+  <g transform="translate(512 512) scale(0.66) translate(-512 -512)">
+    <g fill="#ECFDF5" opacity="0.55">
+      <circle cx="170" cy="220" r="6"/>
+      <circle cx="860" cy="200" r="5"/>
+      <circle cx="200" cy="820" r="7"/>
+      <circle cx="840" cy="830" r="5"/>
+      <circle cx="512" cy="120" r="4"/>
+    </g>
+
+    <g filter="url(#shadow)" transform="translate(512 540)">
+      <path d="M -300 -130 C -260 -180, -120 -200, -20 -150 L -20 200 C -120 150, -260 170, -300 220 Z" fill="url(#book)"/>
+      <path d="M 300 -130 C 260 -180, 120 -200, 20 -150 L 20 200 C 120 150, 260 170, 300 220 Z" fill="url(#book)"/>
+      <rect x="-22" y="-160" width="44" height="380" rx="10" fill="#D1FAE5"/>
+      <g stroke="#10B981" stroke-width="10" stroke-linecap="round" opacity="0.55">
+        <line x1="-250" y1="-80" x2="-70" y2="-95"/>
+        <line x1="-250" y1="-30" x2="-70" y2="-45"/>
+        <line x1="-250" y1="20"  x2="-130" y2="10"/>
+        <line x1="70" y1="-95"  x2="250" y2="-80"/>
+        <line x1="70" y1="-45"  x2="250" y2="-30"/>
+        <line x1="130" y1="10"  x2="250" y2="20"/>
+      </g>
+    </g>
+
+    <g filter="url(#sparkglow)" transform="translate(680 300) rotate(8)">
+      <path d="M 0 -90 L -45 20 L -8 20 L -28 110 L 50 -10 L 12 -10 Z"
+            fill="url(#spark)" stroke="#FACC15" stroke-width="4" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

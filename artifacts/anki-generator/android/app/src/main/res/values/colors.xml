@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brandGreen">#16A34A</color>
+    <color name="brandGreenDark">#15803D</color>
+    <color name="brandWhite">#F8FAF6</color>
+    <color name="colorPrimary">#16A34A</color>
+    <color name="colorPrimaryDark">#15803D</color>
+    <color name="colorAccent">#22C55E</color>
+</resources>

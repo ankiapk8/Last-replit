@@ -1,0 +1,56 @@
+{
+  "packageId": "app.replit.ankicards",
+  "host": "e0d03730-9c60-4ce3-a3fe-ac3b48fe480e-00-hl437y7bdnbc.sisko.replit.dev",
+  "name": "Anki Card Generator",
+  "launcherName": "Anki Cards",
+  "display": "standalone",
+  "themeColor": "#22C55E",
+  "themeColorDark": "#000000",
+  "navigationColor": "#22C55E",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#F8FAF6",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://e0d03730-9c60-4ce3-a3fe-ac3b48fe480e-00-hl437y7bdnbc.sisko.replit.dev/icons/icon-512.png",
+  "maskableIconUrl": "https://e0d03730-9c60-4ce3-a3fe-ac3b48fe480e-00-hl437y7bdnbc.sisko.replit.dev/icons/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "/home/runner/workspace/build-apk/android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "unknown",
+  "webManifestUrl": "https://e0d03730-9c60-4ce3-a3fe-ac3b48fe480e-00-hl437y7bdnbc.sisko.replit.dev/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://e0d03730-9c60-4ce3-a3fe-ac3b48fe480e-00-hl437y7bdnbc.sisko.replit.dev/",
+  "minSdkVersion": 21,
+  "shareTarget": {
+    "action": "https://e0d03730-9c60-4ce3-a3fe-ac3b48fe480e-00-hl437y7bdnbc.sisko.replit.dev/decks?new=1",
+    "method": "GET",
+    "params": {
+      "title": "shared_title",
+      "text": "shared_text",
+      "url": "shared_url"
+    }
+  },
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "1.0.0"
+}

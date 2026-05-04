@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ankigen
+      POSTGRES_PASSWORD: ankigen
+      POSTGRES_DB: ankigen
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ankigen -d ankigen"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://ankigen:ankigen@db:5432/ankigen
+      PORT: "8080"
+      NODE_ENV: production
+      STATIC_DIR: /app/public
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

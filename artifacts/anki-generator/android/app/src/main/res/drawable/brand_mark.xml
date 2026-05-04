@@ -1,0 +1,35 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+
+    <!-- Soft drop-shadow card behind -->
+    <path
+        android:pathData="M48,40 L132,32 Q142,31 144,41 L160,138 Q161,148 151,150 L67,158 Q57,159 55,149 L40,52 Q39,42 48,40 Z"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.35" />
+
+    <!-- Mid card -->
+    <path
+        android:pathData="M44,46 L138,38 Q148,37 150,47 L166,144 Q167,154 157,156 L63,164 Q53,165 51,155 L36,58 Q35,48 44,46 Z"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.6" />
+
+    <!-- Top card (main) -->
+    <path
+        android:pathData="M40,52 L144,42 Q154,41 156,51 L172,150 Q173,160 163,162 L59,170 Q49,171 47,161 L32,64 Q31,54 40,52 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- "A" glyph in brand green -->
+    <group
+        android:name="glyph"
+        android:pivotX="96"
+        android:pivotY="106"
+        android:scaleX="1.0"
+        android:scaleY="1.0">
+        <path
+            android:pathData="M96,72 L72,140 L82,140 L88,124 L108,124 L114,140 L124,140 L100,72 Z M91,116 L98,96 L105,116 Z"
+            android:fillColor="#16A34A" />
+    </group>
+</vector>

@@ -1,0 +1,72 @@
+Image File Extraction Support
+
+What & Why
+
+Users want to upload photos, screenshots, diagrams, and scanned notes directly as image files (JPEG, PNG, WEBP, GIF, BMP, AVIF, TIFF, SVG) to generate Anki cards from them. Each image is treated as a single-page document — the image itself becomes the "page image" for visual card generation, and Tesseract OCR (already bundled client-side) extracts any text from it. This requires zero new server routes because the existing pipeline already accepts pageImages[] and pageTexts[] in exactly this shape. Multi-image upload is supported: each file becomes a separate deck entry.
+
+Done looks like
+
+Users can drag-and-drop or browse for .jpg, .jpeg, .png, .webp, .gif, .bmp, .avif, .tiff, and .svg files alongside PDF, PPTX, and TXT
+Each image file appears as a FileEntry in the generate form with a photo icon and an "Image" type badge
+Extraction runs fully client-side:
+The image is read as a data URL and stored as pageImages[0]
+Tesseract OCR runs on the image and the extracted text becomes pageTexts[0] and text
+pageImageRegions is [[{ x: 0, y: 0, w: 1, h: 1 }]] (the whole image is one region)
+The deckType defaults to "visual" for image files so the visual card count control appears immediately
+SVG files are rendered to a canvas element first (using drawImage) before OCR and before being stored as a data URL, so they work identically to raster images
+Very large images (wider than 2000 px) are downscaled to 2000 px wide on a canvas before storing, to match the pipeline's existing resolution caps and avoid sending multi-MB data URLs to the AI
+The progress indicator shows: "Reading image…" → "Running OCR…" → "Ready"
+If OCR finds no text (pure diagram, photo, etc.), text is set to a minimal description string so the deck name and card generation still work — the AI will generate visual-only cards from the pageImages content
+All existing features that consume PdfExtractionResult (card generation, visual card count estimation, deckType selector, page image badge in the file pill) work without any changes because the shape is identical
+The file input accept, drag-and-drop hint, and unsupported-file error message are all updated to list image types
+Out of scope
+
+Server-side OCR for images (client Tesseract handles it)
+Multi-image collage (each image file stays a separate FileEntry)
+RAW camera formats (.cr2, .nef, etc.)
+Animated GIF frame extraction (first frame only is used)
+Steps
+
+1. Image type helpers in pdf-extraction.ts
+
+Add a constant IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".tiff", ".tif", ".svg"]
+Add IMAGE_MIME_TYPES set matching standard MIME types for those extensions
+Export isImageFile(file: File): boolean — checks extension and MIME type
+Export extractImage(file: File, onProgress: ProgressCallback): Promise<PdfExtractionResult>:
+Read: FileReader.readAsDataURL(file) → raw data URL
+Normalize to canvas: draw into an OffscreenCanvas (or regular <canvas>), capping width at IMAGE_WIDTH (1100 px, matching the PDF pipeline constant). For SVG files set width from the SVG viewBox, then drawImage. Output as JPEG at IMAGE_QUALITY (0.85).
+OCR: reuse the existing Tesseract worker pattern already in pdf-extraction.ts — createWorker("eng"), recognize(canvas), terminate(). Emit onProgress("Running OCR…") before and "Ready" after.
+Build result: return { text: ocrText || "(image)", pageImages: [dataUrl], pageTexts: [ocrText], pageImageRegions: [[{ x: 0, y: 0, w: 1, h: 1 }]] }
+On any error: throw a user-readable message
+2. Generate form updates (generate-form.tsx)
+
+Import isImageFile, extractImage from pdf-extraction.ts
+In processFile:
+const isTxt = isTextFile(file);
+const isPdf = isPdfFile(file);
+const isImg = isImageFile(file);  ← add
+if (!isTxt && !isPdf && !isImg) { toast("Unsupported…"); return; }
+Add else if (isImg) branch that calls extractImage and sets deckType: "visual" (since images are inherently visual)
+Change <input accept=".txt,.pdf,.pptx,.docx,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.tiff,.svg">
+Update drop-zone hint: "Drop PDF, PPTX, DOCX, images, or TXT"
+Update the unsupported-file toast description to list the accepted types
+In the file pill, show a <ImageIcon> (already imported) for image files, with an "Image" badge instead of "N pg"
+deckType defaults to "visual" so the visual card count field shows immediately when an image is dropped
+3. Deck type & visual count behaviour
+
+Because pageImages.length === 1 and pageTexts[0] may be short or empty, estimateCardCapacity will return a small number for text but add 1 visual slot
+The visual card count input should show and default to Math.min(3, visualCardCount) for single images so users don't accidentally request 20 cards from one photo
+Add a small hint below the visual count field when pageImages.length === 1: "Single image — recommend 1–3 cards"
+4. Deck naming
+
+The file base name is used as the deck name (existing logic), which works fine for images
+If OCR text is empty, prefix the deck name with nothing (no change needed — existing fallback)
+5. Icon & badge in file pill
+
+Detect isImageFile in the pill renderer and show <ImageIcon> instead of <FileText>
+Replace the "N pg" span with a single "Image" badge for single-image files
+Keep all existing status, progress, and error rendering unchanged
+Relevant files
+
+artifacts/anki-generator/src/lib/pdf-extraction.ts
+artifacts/anki-generator/src/components/generate-form.tsx

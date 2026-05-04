@@ -1,0 +1,31 @@
+uploads = []
+
+[[generated]]
+id = "r1wPJOlJl8sdk-wsw9ZBW"
+uri = "file://artifacts/anki-generator/public/app-icon.png"
+type = "image"
+title = "anki app icon"
+
+[[outputs]]
+id = "boNrHAC0J0BYOrIFaUvva"
+uri = "file://exports/anki-generator-rebuild-prompts.md"
+type = "text"
+title = "Anki Generator — Full Rebuild Prompt Pack"
+
+[[outputs]]
+id = "lU8hM6bDA8LCWIVZ-t677"
+uri = "file://exports/anki-generator-rebuild-prompts-openrouter.md"
+type = "text"
+title = "Anki Generator — Full Rebuild Prompt Pack (OpenRouter only)"
+
+[[outputs]]
+id = "vZFilpmYFlYTQWT1VH4UJ"
+uri = "file://exports/anki-generator-rebuild-prompts-openrouter-neon.md"
+type = "text"
+title = "Anki Generator — Full Rebuild Prompt Pack (OpenRouter + Neon)"
+
+[[outputs]]
+id = "zDvaPurxWcGJcEGXPII5j"
+uri = "file://exports/anki-generator-master-rebuild-prompts.md"
+type = "text"
+title = "AnkiGen — Master Rebuild Prompt Pack (31 prompts)"
