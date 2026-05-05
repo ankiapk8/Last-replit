@@ -24,12 +24,13 @@ router.post("/mind-map", async (req, res): Promise<void> => {
   }
 
   if (
+    !process.env.OLLAMA_BASE_URL &&
     !process.env.OPENROUTER_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
-    res.status(503).json({ error: "AI is not configured. Set OPENROUTER_API_KEY." });
+    res.status(503).json({ error: "AI is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama." });
     return;
   }
 
@@ -59,6 +60,22 @@ Rules:
 - colors: use varied hex colors from this palette: #6366f1, #ec4899, #f59e0b, #10b981, #3b82f6, #ef4444, #8b5cf6
 - All text must be concise and educational`;
 
+  // Set up SSE headers for streaming progress
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof (res as unknown as { flushHeaders?: () => void }).flushHeaders === "function") {
+    (res as unknown as { flushHeaders: () => void }).flushHeaders();
+  }
+
+  const sendSSE = (event: Record<string, unknown>) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
+      (res as unknown as { flush: () => void }).flush();
+    }
+  };
+
   const makeRequest = async (client: typeof openai, model: string) =>
     client.chat.completions.create({
       model,
@@ -71,41 +88,48 @@ Rules:
     });
 
   try {
+    sendSSE({ type: "progress", percent: 10, message: "Analyzing topic and cards…" });
+
     let completion;
     try {
+      sendSSE({ type: "progress", percent: 30, message: "Generating mind map structure…" });
       completion = await makeRequest(openai, FREE_TEXT_MODEL);
     } catch (primaryErr) {
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
-        console.warn("[mind-map] OpenRouter daily limit hit — falling back to gpt-4o-mini");
+        console.warn("[mind-map] AI provider limit hit — falling back to backup model");
+        sendSSE({ type: "progress", percent: 30, message: "Retrying with backup model…" });
         completion = await makeRequest(fb, FALLBACK_MODEL);
       } else {
         throw primaryErr;
       }
     }
 
+    sendSSE({ type: "progress", percent: 70, message: "Parsing mind map…" });
+
     const rawContent = completion.choices[0]?.message?.content ?? "";
-    // Strip reasoning blocks emitted by thinking models (e.g. <think>...</think>)
     const raw = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      res.status(500).json({ error: "AI returned invalid mind map format. Please try again." });
+      sendSSE({ type: "error", message: "AI returned invalid mind map format. Please try again." });
+      res.end();
       return;
     }
     const parsed = JSON.parse(jsonMatch[0]);
-    res.json(parsed);
+    sendSSE({ type: "progress", percent: 100, message: "Done!" });
+    sendSSE({ type: "done", mindMap: parsed });
+    res.end();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Mind map generation failed.";
     const status = (err as { status?: number }).status;
     const friendly =
       status === 404
-        ? `AI model '${FREE_TEXT_MODEL}' is not available on OpenRouter. Set AI_TEXT_MODEL to a valid model or leave it unset to use the default.`
-        : isDailyLimitError(err)
-          ? "OpenRouter free daily limit reached. Generation will automatically retry via backup AI. Please try again."
-          : /quota|rate.?limit|insufficient|payment/i.test(message)
-            ? "AI quota exceeded. Check your OpenRouter credits at openrouter.ai/credits."
-            : `Mind map generation failed: ${message}`;
-    res.status(503).json({ error: friendly });
+        ? `AI model '${FREE_TEXT_MODEL}' not found in Ollama. Pull it with: ollama pull ${FREE_TEXT_MODEL}`
+        : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
+          ? "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) and OLLAMA_BASE_URL is correct in .env."
+          : `Mind map generation failed: ${message}`;
+    sendSSE({ type: "error", message: friendly });
+    res.end();
   }
 });
 

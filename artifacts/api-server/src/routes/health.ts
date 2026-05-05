@@ -31,7 +31,9 @@ async function checkDatabase(): Promise<CheckResult> {
 }
 
 async function checkAiProvider(): Promise<CheckResult> {
+  const hasOllama = !!process.env["OLLAMA_BASE_URL"];
   const hasEnvKey =
+    hasOllama ||
     process.env["OPENROUTER_API_KEY"] ||
     process.env["OPENAI_API_KEY1"] ||
     process.env["OPENAI_API_KEY"] ||
@@ -39,6 +41,7 @@ async function checkAiProvider(): Promise<CheckResult> {
 
   if (hasEnvKey) {
     const baseUrl =
+      process.env["OLLAMA_BASE_URL"] ||
       process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] ||
       process.env["OPENROUTER_BASE_URL"] ||
       "https://openrouter.ai/api/v1";
@@ -60,12 +63,12 @@ async function checkAiProvider(): Promise<CheckResult> {
     }
     return {
       status: "fail",
-      message: "AI provider is not configured. Set OPENROUTER_API_KEY (https://openrouter.ai/keys) or OPENAI_API_KEY in your environment.",
+      message: "AI provider is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama, or set OPENROUTER_API_KEY.",
     };
   } catch {
     return {
       status: "fail",
-      message: "AI provider is not configured. Set OPENROUTER_API_KEY (https://openrouter.ai/keys) or OPENAI_API_KEY in your environment.",
+      message: "AI provider is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama, or set OPENROUTER_API_KEY.",
     };
   }
 }

@@ -10,13 +10,14 @@ type ExplainMode = "full" | "revision" | "osce" | "brief" | "mnemonic" | "clinic
 
 async function getOpenAIClient() {
   if (
+    !process.env.OLLAMA_BASE_URL &&
     !process.env.OPENROUTER_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI explanation is not configured. Set OPENROUTER_API_KEY (https://openrouter.ai/keys).",
+      "AI explanation is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama.",
     );
   }
   const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await import("@workspace/integrations-openai-ai-server");
@@ -244,7 +245,7 @@ router.post("/explain", async (req, res): Promise<void> => {
     } catch (primaryErr) {
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
-        req.log.warn({ err: primaryErr }, "OpenRouter daily limit hit — falling back to gpt-4o-mini for explanation");
+        req.log.warn({ err: primaryErr }, "AI provider limit hit — falling back to backup model for explanation");
         stream = await fb.chat.completions.create({ ...streamPayload, model: FALLBACK_MODEL });
       } else {
         throw primaryErr;
@@ -262,14 +263,12 @@ router.post("/explain", async (req, res): Promise<void> => {
     const status = (err as { status?: number }).status;
     const friendly =
       status === 404
-        ? `AI model '${EXPLAIN_MODEL}' is not available on OpenRouter. Set AI_TEXT_MODEL to a valid model or leave it unset to use the default.`
-        : isDailyLimitError(err)
-          ? "OpenRouter free daily limit reached. Generation automatically retried via backup AI. Please try again."
-          : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-            ? "AI provider quota exceeded. Add credits at openrouter.ai/credits."
-            : /context length|maximum context|too many tokens/i.test(message)
-              ? "The explanation request was too long for this model. Try a shorter card."
-              : `AI explanation failed: ${message}`;
+        ? `AI model '${EXPLAIN_MODEL}' not found in Ollama. Pull it with: ollama pull ${EXPLAIN_MODEL}`
+        : /context length|maximum context|too many tokens/i.test(message)
+          ? "The explanation request was too long for this model. Try a shorter card."
+          : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
+            ? "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) and OLLAMA_BASE_URL is correct in .env."
+            : `AI explanation failed: ${message}`;
     if (!res.headersSent) {
       res.status(503).json({ error: friendly });
     } else {

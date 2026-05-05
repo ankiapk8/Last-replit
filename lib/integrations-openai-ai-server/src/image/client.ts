@@ -2,31 +2,40 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-const apiKey =
-  process.env.OPENROUTER_API_KEY ||
-  process.env.OPENAI_API_KEY1 ||
-  process.env.OPENAI_API_KEY ||
-  process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+const ollamaBaseURL = process.env.OLLAMA_BASE_URL?.trim() || null;
+const isOpenRouter = !!process.env.OPENROUTER_API_KEY && !ollamaBaseURL;
+
+const apiKey = ollamaBaseURL
+  ? "ollama"
+  : process.env.OPENROUTER_API_KEY ||
+    process.env.OPENAI_API_KEY1 ||
+    process.env.OPENAI_API_KEY ||
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 
 if (!apiKey) {
   throw new Error(
-    "OPENROUTER_API_KEY must be set. Get one at https://openrouter.ai/keys",
+    "No AI provider configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama, or set OPENROUTER_API_KEY.",
   );
 }
 
 const baseURL =
+  ollamaBaseURL ||
   process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
   process.env.OPENROUTER_BASE_URL ||
   "https://openrouter.ai/api/v1";
 
+const defaultHeaders = isOpenRouter
+  ? {
+      "HTTP-Referer":
+        process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
+      "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
+    }
+  : undefined;
+
 export const openai = new OpenAI({
   apiKey,
   baseURL,
-  defaultHeaders: {
-    "HTTP-Referer":
-      process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
-    "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
-  },
+  ...(defaultHeaders ? { defaultHeaders } : {}),
 });
 
 export async function generateImageBuffer(

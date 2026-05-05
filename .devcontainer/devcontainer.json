@@ -20,7 +20,8 @@
         "esbenp.prettier-vscode",
         "bradlc.vscode-tailwindcss",
         "ms-azuretools.vscode-docker",
-        "Prisma.prisma"
+        "Prisma.prisma",
+        "RooVeterinaryInc.roo-cline"
       ],
       "settings": {
         "editor.formatOnSave": true,

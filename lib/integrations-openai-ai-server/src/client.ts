@@ -1,12 +1,24 @@
 import OpenAI from "openai";
 
-const apiKey =
-  process.env.OPENROUTER_API_KEY ||
-  process.env.OPENAI_API_KEY1 ||
-  process.env.OPENAI_API_KEY ||
-  process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+/**
+ * Provider priority:
+ *  1. OLLAMA_BASE_URL  → local Ollama (no API key needed)
+ *  2. OPENROUTER_API_KEY → OpenRouter
+ *  3. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
+ *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
+ */
+const ollamaBaseURL = process.env.OLLAMA_BASE_URL?.trim() || null;
+const isOpenRouter = !!process.env.OPENROUTER_API_KEY && !ollamaBaseURL;
+
+const apiKey = ollamaBaseURL
+  ? "ollama"  // Ollama doesn't require a real key
+  : process.env.OPENROUTER_API_KEY ||
+    process.env.OPENAI_API_KEY1 ||
+    process.env.OPENAI_API_KEY ||
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 
 const baseURL =
+  ollamaBaseURL ||
   process.env.OPENROUTER_BASE_URL ||
   (process.env.OPENROUTER_API_KEY ? "https://openrouter.ai/api/v1" : undefined) ||
   process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
@@ -14,19 +26,24 @@ const baseURL =
 
 export const isConfigured = !!apiKey;
 
+// Only send OpenRouter-specific headers when using OpenRouter
+const defaultHeaders = isOpenRouter
+  ? {
+      "HTTP-Referer":
+        process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
+      "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
+    }
+  : undefined;
+
 export const openai = new OpenAI({
   apiKey: apiKey ?? "not-configured",
   baseURL,
-  defaultHeaders: {
-    "HTTP-Referer":
-      process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
-    "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
-  },
+  ...(defaultHeaders ? { defaultHeaders } : {}),
 });
 
 if (!apiKey) {
   console.warn(
-    "[integrations-openai] No API key found. Set OPENROUTER_API_KEY or OPENAI_API_KEY. Requests will fail.",
+    "[integrations-openai] No API key found. Set OLLAMA_BASE_URL for local Ollama, or OPENROUTER_API_KEY / OPENAI_API_KEY. Requests will fail.",
   );
 }
 
@@ -45,11 +62,15 @@ export function getFallbackOpenAI(): OpenAI | null {
     ...(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
       ? { baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL }
       : {}),
-    defaultHeaders: {
-      "HTTP-Referer":
-        process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
-      "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
-    },
+    ...(isOpenRouter
+      ? {
+          defaultHeaders: {
+            "HTTP-Referer":
+              process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
+            "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
+          },
+        }
+      : {}),
   });
 }
 
