@@ -42,13 +42,13 @@ args = "Auto Rebuild"
 name = "API Server"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=3001 pnpm --filter @workspace/api-server run dev"
 waitForPort = 3001
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [[workflows.workflow]]
 name = "Start application"

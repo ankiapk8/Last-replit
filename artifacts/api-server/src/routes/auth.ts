@@ -91,6 +91,19 @@ router.get("/auth/user", (req: Request, res: Response) => {
 });
 
 router.get("/login", async (req: Request, res: Response) => {
+  if (!process.env.REPL_ID) {
+    res
+      .status(501)
+      .send(
+        "<!DOCTYPE html><html><body style='font-family:sans-serif;max-width:480px;margin:80px auto;padding:20px'>" +
+        "<h2>Login not available</h2>" +
+        "<p>Replit OIDC is not configured (<code>REPL_ID</code> not set).</p>" +
+        "<p>To use login, deploy to <a href='https://replit.com'>Replit</a> or set up a custom OIDC provider. " +
+        "The app works fully without login — your decks are saved anonymously.</p>" +
+        "<p><a href='/'>← Back to app</a></p></body></html>",
+      );
+    return;
+  }
   const config = await getOidcConfig();
   const callbackUrl = `${getOrigin(req)}/api/callback`;
 
@@ -188,6 +201,12 @@ router.get("/callback", async (req: Request, res: Response) => {
 });
 
 router.get("/logout", async (req: Request, res: Response) => {
+  if (!process.env.REPL_ID) {
+    const sid = getSessionId(req);
+    await clearSession(res, sid);
+    res.redirect("/");
+    return;
+  }
   const config = await getOidcConfig();
   const origin = getOrigin(req);
 
