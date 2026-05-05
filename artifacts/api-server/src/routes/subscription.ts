@@ -9,16 +9,16 @@ import { checkIsPro } from "../lib/free-tier-limits";
 const router: IRouter = Router();
 
 function resolveBaseUrl(): string {
-  if (process.env.REPLIT_DOMAINS) {
-    return `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`;
+  // Explicit override — highest priority (use for Codespaces, ngrok, custom domains)
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  // Replit production
+  if (process.env.REPLIT_DOMAINS) return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  // GitHub Codespaces — frontend runs on port 5000
+  if (process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN) {
+    return `https://${process.env.CODESPACE_NAME}-5000.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`;
   }
-  if (process.env.NODE_ENV === 'development') {
-    return `http://localhost:${process.env.PORT ?? '8080'}`;
-  }
-  throw new Error(
-    'Cannot resolve base URL for Stripe redirects: set REPLIT_DOMAINS (production) ' +
-    'or run with NODE_ENV=development (local dev).'
-  );
+  // Local development fallback
+  return `http://localhost:${process.env.FRONTEND_PORT ?? "5000"}`;
 }
 
 async function getActiveSubscription(userId: string) {

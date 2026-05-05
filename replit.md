@@ -46,6 +46,54 @@ The project is structured as a pnpm workspace monorepo.
 *   **Dev Override Endpoints:** API routes (`/api/dev/*`) to control subscription status and usage for testing.
 *   **In-Memory Override Store:** `dev-overrides.ts` for storing dev overrides, resetting on server restart.
 
+## Local Development & GitHub Codespaces
+
+The project runs fully outside Replit. All Replit-specific features are conditional.
+
+### Quick Start (local / Codespaces)
+
+```bash
+# 1. Copy and fill in your env
+cp .env.example .env        # then add your OPENROUTER_API_KEY
+
+# 2. Run setup (installs deps, starts Postgres, runs migrations)
+bash scripts/setup-local.sh
+
+# 3. Start both servers
+bash scripts/start-dev.sh   # API on :3001 + frontend on :5000
+```
+
+**GitHub Codespaces:** Open the repo in Codespaces — the devcontainer (`.devcontainer/`) auto-runs `setup-local.sh` and forwards ports 3001 + 5000.
+
+### Required Environment Variables
+
+| Variable | Description | Where to get it |
+|---|---|---|
+| `OPENROUTER_API_KEY` | AI generation (flashcards, mind maps, QBank) | https://openrouter.ai/keys |
+| `DATABASE_URL` | PostgreSQL connection string | Docker Compose (local) or Neon (cloud) |
+
+### Recommended Free AI Models (set in `.env`)
+
+```
+AI_TEXT_MODEL=meta-llama/llama-3.3-70b-instruct:free
+AI_VISION_MODEL=meta-llama/llama-3.2-11b-vision-instruct:free
+```
+
+### Pro Features in Local Dev
+
+Set `LOCAL_DEV_IS_PRO=true` in `.env` to unlock all Pro features (QBank, Mind Map, Visual Cards, AI explanations) without a Stripe subscription. Already set in `.env.example`.
+
+### Replit-Specific Dependencies (all gracefully skipped outside Replit)
+
+- **Auth**: Replit OIDC (`REPL_ID`). Without it, the app works anonymously. Login page shows a friendly message.
+- **Stripe webhook**: Auto-registered only when `REPLIT_DOMAINS` is set. Skipped locally.
+- **APK builder**: Requires Android SDK; skips gracefully without it.
+- **Vite plugins**: `@replit/vite-plugin-*` loaded only when `REPL_ID` is set.
+
+### Environment Loading
+
+The API server dev script uses `--env-file-if-exists ../../.env` to load the root `.env` file. In Replit, secrets are injected directly and `.env` is a local convenience file.
+
 ## External Dependencies
 
 *   **Monorepo Tool:** pnpm workspaces

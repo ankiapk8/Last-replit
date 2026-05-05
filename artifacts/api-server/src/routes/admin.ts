@@ -88,7 +88,7 @@ router.patch("/admin/users/:id", async (req: Request, res: Response): Promise<vo
   try {
     if (!(await requireModerator(req, res))) return;
 
-    const targetId = req.params.id;
+    const targetId = String(req.params.id);
     const { role, manualPro } = req.body as { role?: string; manualPro?: boolean };
 
     const allowedRoles = ["user", "moderator", "admin"];

@@ -84,7 +84,9 @@ Rules:
       }
     }
 
-    const raw = completion.choices[0]?.message?.content ?? "";
+    const rawContent = completion.choices[0]?.message?.content ?? "";
+    // Strip reasoning blocks emitted by thinking models (e.g. <think>...</think>)
+    const raw = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       res.status(500).json({ error: "AI returned invalid mind map format. Please try again." });

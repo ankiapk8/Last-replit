@@ -15,23 +15,23 @@ function setupSSEHeaders(res: Response): void {
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
-  if (typeof (res as { flushHeaders?: () => void }).flushHeaders === "function") {
-    (res as { flushHeaders: () => void }).flushHeaders();
+  if (typeof (res as unknown as { flushHeaders?: () => void }).flushHeaders === "function") {
+    (res as unknown as { flushHeaders: () => void }).flushHeaders();
   }
 }
 
 function sendSSE(res: Response, event: Record<string, unknown>): void {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
-  if (typeof (res as { flush?: () => void }).flush === "function") {
-    (res as { flush: () => void }).flush();
+  if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
+    (res as unknown as { flush: () => void }).flush();
   }
 }
 
 function startHeartbeat(res: Response, intervalMs = 15000): ReturnType<typeof setInterval> {
   return setInterval(() => {
     res.write(": heartbeat\n\n");
-    if (typeof (res as { flush?: () => void }).flush === "function") {
-      (res as { flush: () => void }).flush();
+    if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
+      (res as unknown as { flush: () => void }).flush();
     }
   }, intervalMs);
 }

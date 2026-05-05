@@ -32,6 +32,8 @@ export function sendLimitError(
 
 export async function checkIsPro(userId: string): Promise<boolean> {
   if (process.env.NODE_ENV !== "production") {
+    // LOCAL_DEV_IS_PRO=true in .env unlocks all Pro features for local development
+    if (process.env.LOCAL_DEV_IS_PRO === "true") return true;
     const override = getDevProOverride(userId);
     if (typeof override === "boolean") return override;
   }
@@ -65,6 +67,10 @@ export async function checkIsPro(userId: string): Promise<boolean> {
 }
 
 export async function getEffectiveIsPro(req: Request, userId: string | null): Promise<boolean> {
+  // LOCAL_DEV_IS_PRO=true in .env unlocks all Pro features for local development
+  if (process.env.LOCAL_DEV_IS_PRO === "true" && process.env.NODE_ENV !== "production") {
+    return true;
+  }
   if (userId) return checkIsPro(userId);
   if (process.env.NODE_ENV !== "production") {
     const entry = getDevOverrideForRequest(req);
