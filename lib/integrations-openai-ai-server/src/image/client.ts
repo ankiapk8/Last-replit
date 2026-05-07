@@ -2,11 +2,18 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-const ollamaBaseURL = process.env.OLLAMA_BASE_URL?.trim() || null;
-const isOpenRouter = !!process.env.OPENROUTER_API_KEY && !ollamaBaseURL;
+/**
+ * Provider priority (matches client.ts):
+ *  1. OLLAMA_CLOUD_API_KEY → Ollama Cloud (primary)
+ *  2. OPENROUTER_API_KEY   → OpenRouter (fallback)
+ *  3. OPENAI_API_KEY       → OpenAI
+ *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
+ */
+const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim() || null;
+const isOpenRouter = !!process.env.OPENROUTER_API_KEY && !ollamaCloudKey;
 
-const apiKey = ollamaBaseURL
-  ? "ollama"
+const apiKey = ollamaCloudKey
+  ? ollamaCloudKey
   : process.env.OPENROUTER_API_KEY ||
     process.env.OPENAI_API_KEY1 ||
     process.env.OPENAI_API_KEY ||
@@ -14,20 +21,19 @@ const apiKey = ollamaBaseURL
 
 if (!apiKey) {
   throw new Error(
-    "No AI provider configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama, or set OPENROUTER_API_KEY.",
+    "No AI provider configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY."
   );
 }
 
-const baseURL =
-  ollamaBaseURL ||
-  process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
-  process.env.OPENROUTER_BASE_URL ||
-  "https://openrouter.ai/api/v1";
+const baseURL = ollamaCloudKey
+  ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
+  : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
+    process.env.OPENROUTER_BASE_URL ||
+    "https://openrouter.ai/api/v1";
 
 const defaultHeaders = isOpenRouter
   ? {
-      "HTTP-Referer":
-        process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
+      "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
       "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
     }
   : undefined;
@@ -38,6 +44,10 @@ export const openai = new OpenAI({
   ...(defaultHeaders ? { defaultHeaders } : {}),
 });
 
+/**
+ * Generate an image and return as Buffer.
+ * Uses gpt-image-1 model via AI provider.
+ */
 export async function generateImageBuffer(
   prompt: string,
   size: "1024x1024" | "512x512" | "256x256" = "1024x1024"
@@ -51,6 +61,10 @@ export async function generateImageBuffer(
   return Buffer.from(base64, "base64");
 }
 
+/**
+ * Edit/combine multiple images into a composite.
+ * Uses gpt-image-1 model via AI provider.
+ */
 export async function editImages(
   imageFiles: string[],
   prompt: string,

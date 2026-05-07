@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, decksTable, cardsTable, qbanksTable, questionsTable } from "@workspace/db";
-import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL } from "../lib/models";
+import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL, QBANK_MODEL } from "../lib/models";
 import { getEffectiveIsPro, sendLimitError } from "../lib/free-tier-limits";
 import { createRateLimiter } from "../lib/rate-limiter";
 
@@ -68,19 +68,18 @@ function splitIntoChunks(text: string): string[] {
 
 async function getAIClient() {
   if (
-    !process.env.OLLAMA_BASE_URL &&
+    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 in your .env file for local Ollama, or set OPENROUTER_API_KEY.",
+      "AI is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY."
     );
   }
-  const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await import(
-    "@workspace/integrations-openai-ai-server"
-  );
+  const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
+    await import("@workspace/integrations-openai-ai-server");
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
 }
 
@@ -114,7 +113,7 @@ interface ImageRegion {
 function buildTextCardPrompt(
   chunk: string,
   targetCount: number,
-  customPrompt?: string,
+  customPrompt?: string
 ): { system: string; user: string } {
   const custom = customPrompt?.trim()
     ? `\n\nAdditional instructions from user: ${customPrompt.trim()}`
@@ -147,11 +146,9 @@ RULES:
 function buildQBankPrompt(
   chunk: string,
   targetCount: number,
-  customPrompt?: string,
+  customPrompt?: string
 ): { system: string; user: string } {
-  const custom = customPrompt?.trim()
-    ? `\n\nAdditional instructions: ${customPrompt.trim()}`
-    : "";
+  const custom = customPrompt?.trim() ? `\n\nAdditional instructions: ${customPrompt.trim()}` : "";
   return {
     system: `You are an expert medical educator creating high-quality MCQs.${custom}
 
@@ -201,8 +198,7 @@ function parseCardsFromAI(raw: string, pageNumber?: number | null): RawCard[] {
         } else {
           card.cardType = "basic";
         }
-        card.pageNumber =
-          typeof c.pageNumber === "number" ? c.pageNumber : (pageNumber ?? null);
+        card.pageNumber = typeof c.pageNumber === "number" ? c.pageNumber : (pageNumber ?? null);
         return card;
       })
       .filter((c): c is RawCard => c !== null);
@@ -218,7 +214,7 @@ async function generateTextCards(
   totalTarget: number,
   pageTexts: string[],
   customPrompt: string | undefined,
-  onProgress: (pct: number, msg: string, count: number) => void,
+  onProgress: (pct: number, msg: string, count: number) => void
 ): Promise<RawCard[]> {
   const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
 
@@ -232,7 +228,7 @@ async function generateTextCards(
     });
   }
   if (sourceChunks.length === 0) {
-    splitIntoChunks(text).forEach(c => sourceChunks.push({ text: c, pageNumber: null }));
+    splitIntoChunks(text).forEach((c) => sourceChunks.push({ text: c, pageNumber: null }));
   }
 
   const cardsPerChunk = Math.max(1, Math.ceil(totalTarget / sourceChunks.length));
@@ -286,12 +282,12 @@ async function generateTextCards(
       if (/user not found|invalid.*key|unauthorized/i.test(msg)) throw err;
       console.error(
         `[generate] Chunk ${i + 1} failed (skipping):`,
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.message : err
       );
     }
 
     if (i < sourceChunks.length - 1) {
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 200));
     }
   }
 
@@ -305,7 +301,7 @@ async function generateVisualCards(
   _pageImageRegions: ImageRegion[][],
   visualCardCount: number,
   customPrompt: string | undefined,
-  onProgress: (pct: number, msg: string, count: number) => void,
+  onProgress: (pct: number, msg: string, count: number) => void
 ): Promise<StagedCard[]> {
   if (pageImages.length === 0) return [];
 
@@ -315,12 +311,18 @@ async function generateVisualCards(
 
   for (let i = 0; i < pageImages.length; i++) {
     const pct = 20 + Math.round((i / pageImages.length) * 60);
-    onProgress(pct, `Analysing page ${i + 1} of ${pageImages.length} for visual elements…`, allCards.length);
+    onProgress(
+      pct,
+      `Analysing page ${i + 1} of ${pageImages.length} for visual elements…`,
+      allCards.length
+    );
 
     const base64 = pageImages[i];
     if (!base64 || base64.length < 100) continue;
 
-    const custom = customPrompt?.trim() ? `\n\nAdditional instructions: ${customPrompt.trim()}` : "";
+    const custom = customPrompt?.trim()
+      ? `\n\nAdditional instructions: ${customPrompt.trim()}`
+      : "";
     const system = `You are a medical visual flashcard expert. Identify distinct visual elements (diagrams, charts, tables, anatomical illustrations, flowcharts, graphs) in this page image.${custom}
 
 For each visual element return a card with:
@@ -337,12 +339,6 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
     try {
       const dataUrl = base64.startsWith("data:") ? base64 : `data:image/jpeg;base64,${base64}`;
       let completion;
-      // Ollama options to limit memory usage for vision models
-      const ollamaOptions = {
-        num_ctx: 4096,      // Reduce context window to save memory
-        num_predict: 1024,  // Limit output tokens
-        temperature: 0.2,
-      };
       try {
         completion = await openai.chat.completions.create({
           model: VISUAL_DETECTION_MODEL,
@@ -357,8 +353,7 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
           ],
           max_tokens: 1024,
           temperature: 0.2,
-          options: ollamaOptions,
-        } as any);
+        });
       } catch (err) {
         const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
         if (fb) {
@@ -375,8 +370,7 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
             ],
             max_tokens: 1024,
             temperature: 0.2,
-            options: ollamaOptions,
-          } as any);
+          });
         } else {
           throw err;
         }
@@ -412,12 +406,12 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
     } catch (err) {
       console.error(
         `[generate] Visual page ${i + 1} failed:`,
-        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.message : err
       );
     }
 
     if (i < pageImages.length - 1) {
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 300));
     }
   }
 
@@ -430,7 +424,7 @@ async function saveDeckAndCards(
   deckName: string,
   parentId: number | null,
   userId: string | null,
-  cards: StagedCard[],
+  cards: StagedCard[]
 ): Promise<{ deckId: number; cardCount: number }> {
   const [deck] = await db
     .insert(decksTable)
@@ -444,7 +438,7 @@ async function saveDeckAndCards(
 
   if (cards.length > 0) {
     await db.insert(cardsTable).values(
-      cards.map(c => ({
+      cards.map((c) => ({
         deckId: deck.id,
         front: c.front,
         back: c.back,
@@ -458,7 +452,7 @@ async function saveDeckAndCards(
         bbox: c.bbox ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
-      })),
+      }))
     );
   }
 
@@ -519,12 +513,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
   const cleanUp = () => clearInterval(heartbeat);
   req.on("close", cleanUp);
 
-  const sendProgress = (
-    pct: number,
-    message: string,
-    cardsCreated = 0,
-    stage = "generating",
-  ) => {
+  const sendProgress = (pct: number, message: string, cardsCreated = 0, stage = "generating") => {
     sendSSE(res, { type: "progress", percent: pct, message, cardsCreated, stage });
   };
 
@@ -539,8 +528,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
         targetCards,
         pageTexts,
         customPrompt,
-        (pct, msg, count) =>
-          sendProgress(Math.round(pct * 0.7), msg, count, "generating"),
+        (pct, msg, count) => sendProgress(Math.round(pct * 0.7), msg, count, "generating")
       );
       allCards.push(...textCards);
       sendProgress(70, `Generated ${textCards.length} text cards`, allCards.length, "saving");
@@ -555,7 +543,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
         targetVisual,
         customPrompt,
         (pct, msg, count) =>
-          sendProgress(70 + Math.round(pct * 0.25), msg, allCards.length + count, "visual"),
+          sendProgress(70 + Math.round(pct * 0.25), msg, allCards.length + count, "visual")
       );
       allCards.push(...visualCards);
       sendProgress(95, `Found ${visualCards.length} visual cards`, allCards.length, "saving");
@@ -574,7 +562,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
         deckName,
         resolvedParentId,
         userId,
-        allCards,
+        allCards
       );
       sendProgress(100, "Done!", savedCount, "done");
       sendSSE(res, {
@@ -586,19 +574,20 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
     const status = (err as { status?: number }).status;
-    const friendly = status === 401 || /user not found|invalid.*key|unauthorized/i.test(message)
-      ? "Ollama authentication failed. Check your OLLAMA_BASE_URL in .env."
-      : status === 404
-      ? `AI model '${FREE_TEXT_MODEL}' not found in Ollama. Pull it with: ollama pull ${FREE_TEXT_MODEL}`
-      : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-      ? "AI provider quota exceeded. Check your Ollama server."
-      : /context length|maximum context|too many tokens/i.test(message)
-      ? "Content is too long for this AI model. Try shorter text or fewer pages."
-      : /not configured|api key/i.test(message)
-      ? message
-      : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-      ? "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) and OLLAMA_BASE_URL is correct in .env."
-      : `Generation failed: ${message}`;
+    const friendly =
+      status === 401 || /user not found|invalid.*key|unauthorized/i.test(message)
+        ? "AI authentication failed. Check your OLLAMA_CLOUD_API_KEY or OPENROUTER_API_KEY in .env."
+        : status === 404
+          ? `AI model '${FREE_TEXT_MODEL}' not found. Check your model name in .env.`
+          : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
+            ? "AI provider quota exceeded. Check your Ollama Cloud or OpenRouter account."
+            : /context length|maximum context|too many tokens/i.test(message)
+              ? "Content is too long for this AI model. Try shorter text or fewer pages."
+              : /not configured|api key/i.test(message)
+                ? message
+                : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
+                  ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
+                  : `Generation failed: ${message}`;
     sendSSE(res, { type: "error", message: friendly });
   } finally {
     cleanUp();
@@ -608,112 +597,114 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
 
 // ─── POST /api/generate/commit ────────────────────────────────────────────────
 
-router.post(
-  "/generate/commit",
-  async (req: Request, res: Response, next): Promise<void> => {
-    try {
-      const { deckName, parentId, cards } = req.body as {
-        deckName?: string;
-        parentId?: number | null;
-        cards?: StagedCard[];
-      };
+router.post("/generate/commit", async (req: Request, res: Response, next): Promise<void> => {
+  try {
+    const { deckName, parentId, cards } = req.body as {
+      deckName?: string;
+      parentId?: number | null;
+      cards?: StagedCard[];
+    };
 
-      if (!deckName?.trim()) {
-        res.status(400).json({ error: "deckName is required" });
-        return;
-      }
-      if (!Array.isArray(cards) || cards.length === 0) {
-        res.status(400).json({ error: "cards must be a non-empty array" });
-        return;
-      }
-
-      const userId = req.isAuthenticated() ? req.user!.id : null;
-      const resolvedParentId = typeof parentId === "number" ? parentId : null;
-
-      const { deckId, cardCount } = await saveDeckAndCards(
-        deckName,
-        resolvedParentId,
-        userId,
-        cards,
-      );
-      res.status(201).json({ deck: { id: deckId }, cardCount });
-    } catch (err) {
-      next(err);
+    if (!deckName?.trim()) {
+      res.status(400).json({ error: "deckName is required" });
+      return;
     }
-  },
-);
-
-// ─── POST /api/generate-qbank/stream ─────────────────────────────────────────
-
-router.post(
-  "/generate-qbank/stream",
-  async (req: Request, res: Response): Promise<void> => {
-    const ip = req.ip ?? "unknown";
-    if (!generateRateLimiter(ip)) {
-      res.status(429).json({ error: "Too many requests. Please wait a moment." });
+    if (!Array.isArray(cards) || cards.length === 0) {
+      res.status(400).json({ error: "cards must be a non-empty array" });
       return;
     }
 
     const userId = req.isAuthenticated() ? req.user!.id : null;
-    const isPro = await getEffectiveIsPro(req, userId);
-    if (!isPro) {
-      sendLimitError(
-        res,
-        "qbank",
-        "QBank generation is a Pro feature. Upgrade to Pro to unlock question banks.",
-      );
-      return;
-    }
-
-    const {
-      text = "",
-      deckName = "Generated Question Bank",
-      questionCount,
-      parentId,
-      customPrompt,
-    } = req.body as {
-      text?: string;
-      deckName?: string;
-      questionCount?: number | "";
-      parentId?: number | null;
-      customPrompt?: string;
-    };
-
-    if (!text.trim()) {
-      res.status(400).json({ error: "text is required" });
-      return;
-    }
-
     const resolvedParentId = typeof parentId === "number" ? parentId : null;
-    const targetQuestions =
-      typeof questionCount === "number" && questionCount > 0 ? questionCount : 20;
 
-    setupSSEHeaders(res);
-    const heartbeat = startHeartbeat(res);
+    const { deckId, cardCount } = await saveDeckAndCards(deckName, resolvedParentId, userId, cards);
+    res.status(201).json({ deck: { id: deckId }, cardCount });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const cleanUp = () => clearInterval(heartbeat);
-    req.on("close", cleanUp);
+// ─── POST /api/generate-qbank/stream ─────────────────────────────────────────
 
-    const sendProgress = (pct: number, message: string) => {
-      sendSSE(res, { type: "progress", percent: pct, message });
-    };
+router.post("/generate-qbank/stream", async (req: Request, res: Response): Promise<void> => {
+  const ip = req.ip ?? "unknown";
+  if (!generateRateLimiter(ip)) {
+    res.status(429).json({ error: "Too many requests. Please wait a moment." });
+    return;
+  }
 
-    try {
-      const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
-      const chunks = splitIntoChunks(text);
-      const questionsPerChunk = Math.max(1, Math.ceil(targetQuestions / chunks.length));
-      const allQuestions: RawCard[] = [];
+  const userId = req.isAuthenticated() ? req.user!.id : null;
+  const isPro = await getEffectiveIsPro(req, userId);
+  if (!isPro) {
+    sendLimitError(
+      res,
+      "qbank",
+      "QBank generation is a Pro feature. Upgrade to Pro to unlock question banks."
+    );
+    return;
+  }
 
-      for (let i = 0; i < chunks.length; i++) {
-        const pct = Math.round((i / chunks.length) * 85);
-        sendProgress(pct, `Generating questions from section ${i + 1} of ${chunks.length}…`);
+  const {
+    text = "",
+    deckName = "Generated Question Bank",
+    questionCount,
+    parentId,
+    customPrompt,
+  } = req.body as {
+    text?: string;
+    deckName?: string;
+    questionCount?: number | "";
+    parentId?: number | null;
+    customPrompt?: string;
+  };
 
-        const { system, user } = buildQBankPrompt(chunks[i], questionsPerChunk, customPrompt);
+  if (!text.trim()) {
+    res.status(400).json({ error: "text is required" });
+    return;
+  }
+
+  const resolvedParentId = typeof parentId === "number" ? parentId : null;
+  const targetQuestions =
+    typeof questionCount === "number" && questionCount > 0 ? questionCount : 20;
+
+  setupSSEHeaders(res);
+  const heartbeat = startHeartbeat(res);
+
+  const cleanUp = () => clearInterval(heartbeat);
+  req.on("close", cleanUp);
+
+  const sendProgress = (pct: number, message: string) => {
+    sendSSE(res, { type: "progress", percent: pct, message });
+  };
+
+  try {
+    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
+    const chunks = splitIntoChunks(text);
+    const questionsPerChunk = Math.max(1, Math.ceil(targetQuestions / chunks.length));
+    const allQuestions: RawCard[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const pct = Math.round((i / chunks.length) * 85);
+      sendProgress(pct, `Generating questions from section ${i + 1} of ${chunks.length}…`);
+
+      const { system, user } = buildQBankPrompt(chunks[i], questionsPerChunk, customPrompt);
+      try {
+        let completion;
         try {
-          let completion;
-          try {
-            completion = await openai.chat.completions.create({
-              model: FREE_TEXT_MODEL,
+          completion = await openai.chat.completions.create({
+            model: QBANK_MODEL,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+            max_tokens: 4000,
+            temperature: 0.3,
+          });
+        } catch (err) {
+          const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+          if (fb) {
+            completion = await fb.chat.completions.create({
+              model: FALLBACK_MODEL,
               messages: [
                 { role: "system", content: system },
                 { role: "user", content: user },
@@ -721,91 +712,76 @@ router.post(
               max_tokens: 4000,
               temperature: 0.3,
             });
-          } catch (err) {
-            const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
-            if (fb) {
-              completion = await fb.chat.completions.create({
-                model: FALLBACK_MODEL,
-                messages: [
-                  { role: "system", content: system },
-                  { role: "user", content: user },
-                ],
-                max_tokens: 4000,
-                temperature: 0.3,
-              });
-            } else {
-              throw err;
-            }
+          } else {
+            throw err;
           }
-          const parsed = parseCardsFromAI(
-            completion.choices[0]?.message?.content ?? "",
-            null,
-          );
-          allQuestions.push(...parsed);
-        } catch (err) {
-          console.error(
-            `[generate-qbank] Chunk ${i + 1} failed:`,
-            err instanceof Error ? err.message : err,
-          );
         }
-
-        if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 200));
-      }
-
-      sendProgress(90, "Saving question bank…");
-
-      const [qbank] = await db
-        .insert(qbanksTable)
-        .values({
-          name: deckName.trim() || "Generated Question Bank",
-          parentId: resolvedParentId ?? undefined,
-          userId: userId ?? undefined,
-        })
-        .returning();
-
-      const capped = allQuestions.slice(0, targetQuestions * 2);
-      if (capped.length > 0) {
-        await db.insert(questionsTable).values(
-          capped.map(q => ({
-            qbankId: qbank.id,
-            front: q.front,
-            back: q.back,
-            choices: q.choices ? JSON.stringify(q.choices) : null,
-            correctIndex: q.correctIndex ?? null,
-            tags: q.tags ?? null,
-            pageNumber: q.pageNumber ?? null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })),
+        const parsed = parseCardsFromAI(completion.choices[0]?.message?.content ?? "", null);
+        allQuestions.push(...parsed);
+      } catch (err) {
+        console.error(
+          `[generate-qbank] Chunk ${i + 1} failed:`,
+          err instanceof Error ? err.message : err
         );
       }
 
-      sendProgress(100, "Done!");
-      sendSSE(res, {
-        type: "done",
-        generatedCount: capped.length,
-        qbank: { id: qbank.id },
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Generation failed";
-      const status = (err as { status?: number }).status;
-      const friendly = status === 401 || /user not found|invalid.*key|unauthorized/i.test(message)
-        ? "Ollama authentication failed. Check your OLLAMA_BASE_URL in .env."
-        : status === 404
-        ? `AI model '${FREE_TEXT_MODEL}' not found in Ollama. Pull it with: ollama pull ${FREE_TEXT_MODEL}`
-        : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-        ? "AI provider quota exceeded. Check your Ollama server."
-        : /not configured|api key/i.test(message)
-        ? message
-        : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-        ? "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) and OLLAMA_BASE_URL is correct in .env."
-        : `Question bank generation failed: ${message}`;
-      sendSSE(res, { type: "error", message: friendly });
-    } finally {
-      cleanUp();
-      res.end();
+      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 200));
     }
-  },
-);
+
+    sendProgress(90, "Saving question bank…");
+
+    const [qbank] = await db
+      .insert(qbanksTable)
+      .values({
+        name: deckName.trim() || "Generated Question Bank",
+        parentId: resolvedParentId ?? undefined,
+        userId: userId ?? undefined,
+      })
+      .returning();
+
+    const capped = allQuestions.slice(0, targetQuestions * 2);
+    if (capped.length > 0) {
+      await db.insert(questionsTable).values(
+        capped.map((q) => ({
+          qbankId: qbank.id,
+          front: q.front,
+          back: q.back,
+          choices: q.choices ? JSON.stringify(q.choices) : null,
+          correctIndex: q.correctIndex ?? null,
+          tags: q.tags ?? null,
+          pageNumber: q.pageNumber ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }))
+      );
+    }
+
+    sendProgress(100, "Done!");
+    sendSSE(res, {
+      type: "done",
+      generatedCount: capped.length,
+      qbank: { id: qbank.id },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Generation failed";
+    const status = (err as { status?: number }).status;
+    const friendly =
+      status === 401 || /user not found|invalid.*key|unauthorized/i.test(message)
+        ? "AI authentication failed. Check your OLLAMA_CLOUD_API_KEY or OPENROUTER_API_KEY in .env."
+        : status === 404
+          ? `AI model '${QBANK_MODEL}' not found. Check your model name in .env.`
+          : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
+            ? "AI provider quota exceeded. Check your Ollama Cloud or OpenRouter account."
+            : /not configured|api key/i.test(message)
+              ? message
+              : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
+                ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
+                : `Question bank generation failed: ${message}`;
+    sendSSE(res, { type: "error", message: friendly });
+  } finally {
+    cleanUp();
+    res.end();
+  }
+});
 
 export default router;

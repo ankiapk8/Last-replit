@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { FREE_TEXT_MODEL, FREE_VISION_MODEL, EXPLAIN_MODEL, VISUAL_DETECTION_MODEL, MODEL_SUMMARY } from "../lib/models";
+import {
+  FREE_TEXT_MODEL,
+  FREE_VISION_MODEL,
+  EXPLAIN_MODEL,
+  VISUAL_DETECTION_MODEL,
+  MODEL_SUMMARY,
+} from "../lib/models";
 
 const router: IRouter = Router();
 
@@ -31,9 +37,9 @@ async function checkDatabase(): Promise<CheckResult> {
 }
 
 async function checkAiProvider(): Promise<CheckResult> {
-  const hasOllama = !!process.env["OLLAMA_BASE_URL"];
+  const hasOllamaCloud = !!process.env["OLLAMA_CLOUD_API_KEY"];
   const hasEnvKey =
-    hasOllama ||
+    hasOllamaCloud ||
     process.env["OPENROUTER_API_KEY"] ||
     process.env["OPENAI_API_KEY1"] ||
     process.env["OPENAI_API_KEY"] ||
@@ -41,7 +47,7 @@ async function checkAiProvider(): Promise<CheckResult> {
 
   if (hasEnvKey) {
     const baseUrl =
-      process.env["OLLAMA_BASE_URL"] ||
+      process.env["OLLAMA_CLOUD_BASE_URL"] ||
       process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] ||
       process.env["OPENROUTER_BASE_URL"] ||
       "https://openrouter.ai/api/v1";
@@ -63,12 +69,14 @@ async function checkAiProvider(): Promise<CheckResult> {
     }
     return {
       status: "fail",
-      message: "AI provider is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama, or set OPENROUTER_API_KEY.",
+      message:
+        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY.",
     };
   } catch {
     return {
       status: "fail",
-      message: "AI provider is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama, or set OPENROUTER_API_KEY.",
+      message:
+        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY.",
     };
   }
 }
@@ -77,10 +85,10 @@ router.get("/model-info", (_req, res) => {
   const isFree = (m: string) => /:free$/.test(m) || /free/i.test(m.split("/").pop() ?? "");
   res.json({
     ...MODEL_SUMMARY,
-    textModel:   MODEL_SUMMARY.text,
+    textModel: MODEL_SUMMARY.text,
     visionModel: MODEL_SUMMARY.vision,
-    sameModel:   MODEL_SUMMARY.text === MODEL_SUMMARY.vision,
-    textFree:   isFree(MODEL_SUMMARY.text),
+    sameModel: MODEL_SUMMARY.text === MODEL_SUMMARY.vision,
+    textFree: isFree(MODEL_SUMMARY.text),
     visionFree: isFree(MODEL_SUMMARY.vision),
     explainFree: isFree(MODEL_SUMMARY.explain),
     visualDetectionFree: isFree(MODEL_SUMMARY.visualDetection),
@@ -88,19 +96,13 @@ router.get("/model-info", (_req, res) => {
 });
 
 router.get("/healthz", async (_req, res) => {
-  const [database, ai] = await Promise.all([
-    checkDatabase(),
-    checkAiProvider(),
-  ]);
+  const [database, ai] = await Promise.all([checkDatabase(), checkAiProvider()]);
 
   const allOk = database.status === "ok" && ai.status === "ok";
   const status: "ok" | "degraded" = allOk ? "ok" : "degraded";
 
   if (!allOk) {
-    logger.warn(
-      { database, ai },
-      "Health check reported degraded dependencies",
-    );
+    logger.warn({ database, ai }, "Health check reported degraded dependencies");
   }
 
   res.status(allOk ? 200 : 503).json({

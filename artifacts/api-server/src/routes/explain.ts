@@ -10,17 +10,18 @@ type ExplainMode = "full" | "revision" | "osce" | "brief" | "mnemonic" | "clinic
 
 async function getOpenAIClient() {
   if (
-    !process.env.OLLAMA_BASE_URL &&
+    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI explanation is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama.",
+      "AI explanation is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY."
     );
   }
-  const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await import("@workspace/integrations-openai-ai-server");
+  const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
+    await import("@workspace/integrations-openai-ai-server");
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
 }
 
@@ -34,7 +35,7 @@ function buildPrompts(
   front: string,
   back: string,
   choices?: string[],
-  correctIndex?: number,
+  correctIndex?: number
 ): { system: string; user: string; maxTokens: number } {
   const topic = `${front}: ${back}`;
 
@@ -107,9 +108,12 @@ STYLE: Concise, structured, exam-ready.`,
 
   if (mode === "brief") {
     const letters = ["A", "B", "C", "D", "E", "F"];
-    const choiceLines = Array.isArray(choices) && choices.length > 0
-      ? choices.map((c, i) => `  ${letters[i] ?? i}. ${c}${i === correctIndex ? " ✓ CORRECT" : ""}`).join("\n")
-      : "(no choices provided)";
+    const choiceLines =
+      Array.isArray(choices) && choices.length > 0
+        ? choices
+            .map((c, i) => `  ${letters[i] ?? i}. ${c}${i === correctIndex ? " ✓ CORRECT" : ""}`)
+            .join("\n")
+        : "(no choices provided)";
     return {
       maxTokens: 1500,
       system: `You are a concise MCQ tutor. For the multiple-choice question given, produce a brief answer breakdown in this exact format:
@@ -195,9 +199,18 @@ router.post("/explain", async (req, res): Promise<void> => {
     res.status(429).json({ error: "Too many requests. Please wait a moment before trying again." });
     return;
   }
-  const { front, back, mode = "full", choices, correctIndex } = req.body as {
-    front?: string; back?: string; mode?: ExplainMode;
-    choices?: string[]; correctIndex?: number;
+  const {
+    front,
+    back,
+    mode = "full",
+    choices,
+    correctIndex,
+  } = req.body as {
+    front?: string;
+    back?: string;
+    mode?: ExplainMode;
+    choices?: string[];
+    correctIndex?: number;
   };
 
   if (!front || !back) {
@@ -206,9 +219,15 @@ router.post("/explain", async (req, res): Promise<void> => {
   }
 
   const validModes: ExplainMode[] = ["full", "revision", "osce", "brief", "mnemonic", "clinical"];
-  const resolvedMode: ExplainMode = validModes.includes(mode as ExplainMode) ? (mode as ExplainMode) : "full";
+  const resolvedMode: ExplainMode = validModes.includes(mode as ExplainMode)
+    ? (mode as ExplainMode)
+    : "full";
 
-  const { system: systemPrompt, user: userPrompt, maxTokens } = buildPrompts(resolvedMode, front, back, choices, correctIndex);
+  const {
+    system: systemPrompt,
+    user: userPrompt,
+    maxTokens,
+  } = buildPrompts(resolvedMode, front, back, choices, correctIndex);
 
   let clients;
   try {
@@ -245,7 +264,10 @@ router.post("/explain", async (req, res): Promise<void> => {
     } catch (primaryErr) {
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
-        req.log.warn({ err: primaryErr }, "AI provider limit hit — falling back to backup model for explanation");
+        req.log.warn(
+          { err: primaryErr },
+          "AI provider limit hit — falling back to backup model for explanation"
+        );
         stream = await fb.chat.completions.create({ ...streamPayload, model: FALLBACK_MODEL });
       } else {
         throw primaryErr;
@@ -263,11 +285,11 @@ router.post("/explain", async (req, res): Promise<void> => {
     const status = (err as { status?: number }).status;
     const friendly =
       status === 404
-        ? `AI model '${EXPLAIN_MODEL}' not found in Ollama. Pull it with: ollama pull ${EXPLAIN_MODEL}`
+        ? `AI model '${EXPLAIN_MODEL}' not found. Check your model name in .env.`
         : /context length|maximum context|too many tokens/i.test(message)
           ? "The explanation request was too long for this model. Try a shorter card."
           : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-            ? "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) and OLLAMA_BASE_URL is correct in .env."
+            ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
             : `AI explanation failed: ${message}`;
     if (!res.headersSent) {
       res.status(503).json({ error: friendly });

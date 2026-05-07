@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { createRateLimiter } from "../lib/rate-limiter";
-import { FREE_TEXT_MODEL } from "../lib/models";
+import { MINDMAP_MODEL } from "../lib/models";
 
 const router: IRouter = Router();
 const mindMapRateLimiter = createRateLimiter(10, 60_000);
@@ -17,24 +17,33 @@ router.post("/mind-map", async (req, res): Promise<void> => {
     return;
   }
 
-  const { topic, cards } = req.body as { topic?: string; cards?: Array<{ front: string; back: string }> };
+  const { topic, cards } = req.body as {
+    topic?: string;
+    cards?: Array<{ front: string; back: string }>;
+  };
   if (!topic && (!cards || cards.length === 0)) {
     res.status(400).json({ error: "topic or cards are required." });
     return;
   }
 
   if (
-    !process.env.OLLAMA_BASE_URL &&
+    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
-    res.status(503).json({ error: "AI is not configured. Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local Ollama." });
+    res
+      .status(503)
+      .json({
+        error:
+          "AI is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY.",
+      });
     return;
   }
 
-  const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await import("@workspace/integrations-openai-ai-server");
+  const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
+    await import("@workspace/integrations-openai-ai-server");
   const content = cards
     ? `Topic: ${topic ?? "Study material"}\n\nCards:\n${cards.map((c, i) => `${i + 1}. Q: ${c.front}\n   A: ${c.back}`).join("\n")}`
     : `Topic: ${topic}`;
@@ -74,7 +83,7 @@ Rules:
   try {
     let completion;
     try {
-      completion = await makeRequest(openai, FREE_TEXT_MODEL);
+      completion = await makeRequest(openai, MINDMAP_MODEL);
     } catch (primaryErr) {
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
@@ -100,9 +109,9 @@ Rules:
     const status = (err as { status?: number }).status;
     const friendly =
       status === 404
-        ? `AI model '${FREE_TEXT_MODEL}' not found in Ollama. Pull it with: ollama pull ${FREE_TEXT_MODEL}`
+        ? `AI model '${MINDMAP_MODEL}' not found. Check your model name in .env.`
         : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-          ? "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) and OLLAMA_BASE_URL is correct in .env."
+          ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
           : `Mind map generation failed: ${message}`;
     res.status(503).json({ error: friendly });
   }
