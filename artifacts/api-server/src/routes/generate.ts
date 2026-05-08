@@ -1,9 +1,27 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { randomUUID } from "node:crypto";
 import { db, decksTable, cardsTable, qbanksTable, questionsTable } from "@workspace/db";
 import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL, QBANK_MODEL } from "../lib/models";
 import { getEffectiveIsPro, sendLimitError } from "../lib/free-tier-limits";
 import { createRateLimiter } from "../lib/rate-limiter";
 import { generationCache, ResponseCache } from "../lib/response-cache";
+
+// In-memory generation status map for polling fallback
+interface GenerationStatus {
+  status: "running" | "completed" | "failed";
+  deckId?: number;
+  error?: string;
+  startedAt: number;
+}
+const generationStatusMap = new Map<string, GenerationStatus>();
+
+// Cleanup old entries every 5 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 3_600_000; // 1 hour
+  for (const [id, entry] of generationStatusMap) {
+    if (entry.startedAt < cutoff) generationStatusMap.delete(id);
+  }
+}, 300_000).unref?.();
 
 const router: IRouter = Router();
 
@@ -62,6 +80,13 @@ function isDailyLimitError(error: unknown): boolean {
 
 // ─── AI client ────────────────────────────────────────────────────────────────
 
+// Module-level cache for AI client to avoid re-initializing on every request
+let cachedAIClient: {
+  openai: Awaited<ReturnType<typeof getAIClient>>["openai"];
+  getFallbackOpenAI: Awaited<ReturnType<typeof getAIClient>>["getFallbackOpenAI"];
+  FALLBACK_MODEL: string;
+} | null = null;
+
 async function getAIClient() {
   if (
     !process.env.OLLAMA_CLOUD_API_KEY &&
@@ -96,6 +121,14 @@ async function getAIClient() {
   );
 
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
+}
+
+/** Get cached AI client (initialized once, reused across requests) */
+async function getCachedAIClient() {
+  if (!cachedAIClient) {
+    cachedAIClient = await getAIClient();
+  }
+  return cachedAIClient;
 }
 
 // ─── Card types ───────────────────────────────────────────────────────────────
@@ -322,7 +355,7 @@ async function generateTextCardsUnified(
       ],
       max_tokens: 8000,
       temperature: 0.3,
-    });
+    }, { signal: AbortSignal.timeout(120_000) });
     console.log(
       `[generate] Unified text generation: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
     );
@@ -347,7 +380,7 @@ async function generateTextCardsUnified(
         ],
         max_tokens: 8000,
         temperature: 0.3,
-      });
+      }, { signal: AbortSignal.timeout(120_000) });
     } else {
       throw err;
     }
@@ -422,7 +455,7 @@ Rules:
         messages: [{ role: "user", content }],
         max_tokens: 4000,
         temperature: 0.2,
-      });
+      }, { signal: AbortSignal.timeout(120_000) });
       console.log(
         `[generate] Unified visual generation: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
       );
@@ -442,7 +475,7 @@ Rules:
           messages: [{ role: "user", content }],
           max_tokens: 4000,
           temperature: 0.2,
-        });
+        }, { signal: AbortSignal.timeout(120_000) });
       } else {
         throw err;
       }
@@ -504,37 +537,39 @@ async function saveDeckAndCards(
   userId: string | null,
   cards: StagedCard[]
 ): Promise<{ deckId: number; cardCount: number }> {
-  const [deck] = await db
-    .insert(decksTable)
-    .values({
-      name: deckName.trim() || "Generated Deck",
-      parentId: parentId ?? undefined,
-      userId: userId ?? undefined,
-      kind: "deck",
-    })
-    .returning();
+  return await db.transaction(async (tx) => {
+    const [deck] = await tx
+      .insert(decksTable)
+      .values({
+        name: deckName.trim() || "Generated Deck",
+        parentId: parentId ?? undefined,
+        userId: userId ?? undefined,
+        kind: "deck",
+      })
+      .returning();
 
-  if (cards.length > 0) {
-    await db.insert(cardsTable).values(
-      cards.map((c) => ({
-        deckId: deck.id,
-        front: c.front,
-        back: c.back,
-        tags: c.tags ?? null,
-        cardType: (c.cardType ?? "basic") as "basic" | "mcq" | "image",
-        choices: c.choices ? JSON.stringify(c.choices) : null,
-        correctIndex: c.correctIndex ?? null,
-        pageNumber: c.pageNumber ?? null,
-        image: c.image ?? null,
-        sourceImage: c.sourceImage ?? null,
-        bbox: c.bbox ?? null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }))
-    );
-  }
+    if (cards.length > 0) {
+      await tx.insert(cardsTable).values(
+        cards.map((c) => ({
+          deckId: deck.id,
+          front: c.front,
+          back: c.back,
+          tags: c.tags ?? null,
+          cardType: (c.cardType ?? "basic") as "basic" | "mcq" | "image",
+          choices: c.choices ? JSON.stringify(c.choices) : null,
+          correctIndex: c.correctIndex ?? null,
+          pageNumber: c.pageNumber ?? null,
+          image: c.image ?? null,
+          sourceImage: c.sourceImage ?? null,
+          bbox: c.bbox ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }))
+      );
+    }
 
-  return { deckId: deck.id, cardCount: cards.length };
+    return { deckId: deck.id, cardCount: cards.length };
+  });
 }
 
 // ─── POST /api/generate/stream ────────────────────────────────────────────────
@@ -557,7 +592,6 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
     customPrompt,
     pageTexts = [],
     pageImageRegions = [],
-    preview = false,
   } = req.body as {
     text?: string;
     deckName?: string;
@@ -569,7 +603,6 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
     customPrompt?: string;
     pageTexts?: string[];
     pageImageRegions?: ImageRegion[][];
-    preview?: boolean;
   };
 
   if (!text.trim() && pageImages.length === 0) {
@@ -585,6 +618,10 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
       ? visualCardCount
       : Math.min(pageImages.length * 2, 30);
 
+  // Generate a unique ID for this generation (for polling fallback + status tracking)
+  const generationId = randomUUID();
+  const startedAt = Date.now();
+
   setupSSEHeaders(res);
   const heartbeat = startHeartbeat(res);
 
@@ -596,10 +633,13 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
   };
 
   try {
-    // Initialize AI client once, pass to all generation functions
-    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
+    // Initialize AI client once (cached across requests), pass to all generation functions
+    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getCachedAIClient();
 
     const allCards: StagedCard[] = [];
+
+    // Send generation ID as first event so client can poll if SSE drops
+    sendSSE(res, { type: "init", generationId });
 
     // Text card generation (SINGLE AI call for all cards)
     if ((deckType === "text" || deckType === "both") && text.trim()) {
@@ -634,26 +674,28 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
 
     sendProgress(97, "Saving your deck…", allCards.length, "saving");
 
-    if (preview) {
-      sendSSE(res, {
-        type: "done",
-        generatedCount: allCards.length,
-        cards: allCards,
-      });
-    } else {
-      const { deckId, cardCount: savedCount } = await saveDeckAndCards(
-        deckName,
-        resolvedParentId,
-        userId,
-        allCards
-      );
-      sendProgress(100, "Done!", savedCount, "done");
-      sendSSE(res, {
-        type: "done",
-        generatedCount: savedCount,
-        deck: { id: deckId },
-      });
-    }
+    // Always save to DB (no more preview mode)
+    const { deckId, cardCount: savedCount } = await saveDeckAndCards(
+      deckName,
+      resolvedParentId,
+      userId,
+      allCards
+    );
+
+    // Track success status in memory for polling fallback
+    generationStatusMap.set(generationId, {
+      status: "completed",
+      deckId,
+      startedAt,
+    });
+
+    sendProgress(100, "Done!", savedCount, "done");
+    sendSSE(res, {
+      type: "done",
+      generatedCount: savedCount,
+      deck: { id: deckId },
+      generationId,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
     const status = (err as { status?: number }).status;
@@ -671,40 +713,38 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
                 : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
                   ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
                   : `Generation failed: ${message}`;
-    sendSSE(res, { type: "error", message: friendly });
+
+    // Track error status in memory for polling fallback
+    generationStatusMap.set(generationId, {
+      status: "failed",
+      error: friendly,
+      startedAt,
+    });
+
+    sendSSE(res, { type: "error", message: friendly, generationId });
   } finally {
     cleanUp();
     res.end();
   }
 });
 
-// ─── POST /api/generate/commit ────────────────────────────────────────────────
+// ─── GET /api/generate/status/:id ─────────────────────────────────────────────
+// Polling endpoint for SSE fallback — returns generation status by UUID
 
-router.post("/generate/commit", async (req: Request, res: Response, next): Promise<void> => {
-  try {
-    const { deckName, parentId, cards } = req.body as {
-      deckName?: string;
-      parentId?: number | null;
-      cards?: StagedCard[];
-    };
+router.get("/generate/status/:id", async (req: Request, res: Response): Promise<void> => {
+  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const status = generationStatusMap.get(id);
 
-    if (!deckName?.trim()) {
-      res.status(400).json({ error: "deckName is required" });
-      return;
-    }
-    if (!Array.isArray(cards) || cards.length === 0) {
-      res.status(400).json({ error: "cards must be a non-empty array" });
-      return;
-    }
-
-    const userId = req.isAuthenticated() ? req.user!.id : null;
-    const resolvedParentId = typeof parentId === "number" ? parentId : null;
-
-    const { deckId, cardCount } = await saveDeckAndCards(deckName, resolvedParentId, userId, cards);
-    res.status(201).json({ deck: { id: deckId }, cardCount });
-  } catch (err) {
-    next(err);
+  if (!status) {
+    res.status(404).json({ error: "Generation not found" });
+    return;
   }
+
+  res.json({
+    status: status.status,
+    deckId: status.deckId,
+    error: status.error,
+  });
 });
 
 // ─── POST /api/generate-qbank/stream ─────────────────────────────────────────
@@ -750,6 +790,10 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
   const targetQuestions =
     typeof questionCount === "number" && questionCount > 0 ? questionCount : 20;
 
+  // Generate a unique ID for this generation (for polling fallback)
+  const generationId = randomUUID();
+  const startedAt = Date.now();
+
   setupSSEHeaders(res);
   const heartbeat = startHeartbeat(res);
 
@@ -761,7 +805,10 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
   };
 
   try {
-    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
+    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getCachedAIClient();
+
+    // Send generation ID as first event so client can poll if SSE drops
+    sendSSE(res, { type: "init", generationId });
     const { text: preparedText, truncated } = prepareText(text);
     if (truncated) {
       console.log(
@@ -796,7 +843,7 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
           ],
           max_tokens: 8000,
           temperature: 0.3,
-        });
+        }, { signal: AbortSignal.timeout(120_000) });
         console.log(
           `[generate-qbank] Response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
         );
@@ -819,7 +866,7 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
             ],
             max_tokens: 8000,
             temperature: 0.3,
-          });
+          }, { signal: AbortSignal.timeout(120_000) });
         } else {
           throw err;
         }
@@ -835,37 +882,50 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
 
     sendProgress(90, "Saving question bank…");
 
-    const [qbank] = await db
-      .insert(qbanksTable)
-      .values({
-        name: deckName.trim() || "Generated Question Bank",
-        parentId: resolvedParentId ?? undefined,
-        userId: userId ?? undefined,
-      })
-      .returning();
-
+    // Wrap qbank + questions in a transaction for atomicity
     const capped = allQuestions.slice(0, targetQuestions * 2);
-    if (capped.length > 0) {
-      await db.insert(questionsTable).values(
-        capped.map((q) => ({
-          qbankId: qbank.id,
-          front: q.front,
-          back: q.back,
-          choices: q.choices ? JSON.stringify(q.choices) : null,
-          correctIndex: q.correctIndex ?? null,
-          tags: q.tags ?? null,
-          pageNumber: q.pageNumber ?? null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }))
-      );
-    }
+    const qbankId = await db.transaction(async (tx) => {
+      const [qbank] = await tx
+        .insert(qbanksTable)
+        .values({
+          name: deckName.trim() || "Generated Question Bank",
+          parentId: resolvedParentId ?? undefined,
+          userId: userId ?? undefined,
+        })
+        .returning();
+
+      if (capped.length > 0) {
+        await tx.insert(questionsTable).values(
+          capped.map((q) => ({
+            qbankId: qbank.id,
+            front: q.front,
+            back: q.back,
+            choices: q.choices ? JSON.stringify(q.choices) : null,
+            correctIndex: q.correctIndex ?? null,
+            tags: q.tags ?? null,
+            pageNumber: q.pageNumber ?? null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }))
+        );
+      }
+
+      return qbank.id;
+    });
+
+    // Track success status in memory for polling fallback
+    generationStatusMap.set(generationId, {
+      status: "completed",
+      deckId: qbankId,
+      startedAt,
+    });
 
     sendProgress(100, "Done!");
     sendSSE(res, {
       type: "done",
       generatedCount: capped.length,
-      qbank: { id: qbank.id },
+      qbank: { id: qbankId },
+      generationId,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
@@ -882,7 +942,15 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
               : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
                 ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
                 : `Question bank generation failed: ${message}`;
-    sendSSE(res, { type: "error", message: friendly });
+
+    // Track error status in memory for polling fallback
+    generationStatusMap.set(generationId, {
+      status: "failed",
+      error: friendly,
+      startedAt,
+    });
+
+    sendSSE(res, { type: "error", message: friendly, generationId });
   } finally {
     cleanUp();
     res.end();

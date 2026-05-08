@@ -499,6 +499,18 @@ export default function Decks() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Refetch decks/qbanks when tab becomes visible (handles generation from another tab/sheet)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        queryClient.invalidateQueries({ queryKey: getListDecksQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListQbanksQueryKey() });
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [queryClient]);
+
   const [generateSheetOpen, setGenerateSheetOpen] = useState(false);
   const [sharedText, setSharedText] = useState<string | undefined>(undefined);
   const [sharedTitle, setSharedTitle] = useState<string | undefined>(undefined);

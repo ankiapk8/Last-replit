@@ -262,7 +262,9 @@ router.post("/explain", async (req, res): Promise<void> => {
   try {
     let stream;
     try {
-      stream = await openai.chat.completions.create(streamPayload);
+      stream = await openai.chat.completions.create(streamPayload, {
+        signal: AbortSignal.timeout(120_000),
+      });
     } catch (primaryErr) {
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
@@ -270,7 +272,10 @@ router.post("/explain", async (req, res): Promise<void> => {
           { err: primaryErr },
           "AI provider limit hit — falling back to backup model for explanation"
         );
-        stream = await fb.chat.completions.create({ ...streamPayload, model: FALLBACK_MODEL });
+        stream = await fb.chat.completions.create(
+          { ...streamPayload, model: FALLBACK_MODEL },
+          { signal: AbortSignal.timeout(120_000) }
+        );
       } else {
         throw primaryErr;
       }
@@ -384,7 +389,7 @@ RULES:
         ],
         max_tokens: Math.min(8000, batch.length * 400),
         temperature: 0.3,
-      });
+      }, { signal: AbortSignal.timeout(120_000) });
     } catch (primaryErr) {
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
@@ -397,7 +402,7 @@ RULES:
           ],
           max_tokens: Math.min(8000, batch.length * 400),
           temperature: 0.3,
-        });
+        }, { signal: AbortSignal.timeout(120_000) });
       } else {
         throw primaryErr;
       }

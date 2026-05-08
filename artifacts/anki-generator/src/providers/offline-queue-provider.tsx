@@ -92,10 +92,31 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
     setIsSyncing(true);
 
     for (const item of items) {
-      try {
-        const ok = await syncItemToApi(item, queryClient);
-        if (ok) await dbRemove(item.id);
-      } catch { /* network error for this item; leave in queue */ }
+      let success = false;
+      let lastError: unknown = null;
+
+      // Retry up to 3 times with exponential backoff
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          if (attempt > 0) {
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+          }
+          const ok = await syncItemToApi(item, queryClient);
+          if (ok) {
+            success = true;
+            break;
+          }
+        } catch (err) {
+          lastError = err;
+          console.warn(`[offline-queue] Sync attempt ${attempt + 1} failed for item ${item.id}:`, err);
+        }
+      }
+
+      if (success) {
+        await dbRemove(item.id);
+      } else {
+        console.error(`[offline-queue] All sync attempts failed for item ${item.id}:`, lastError);
+      }
     }
 
     await refreshCount();

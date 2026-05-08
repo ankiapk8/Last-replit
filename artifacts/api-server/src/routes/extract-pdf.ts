@@ -51,9 +51,8 @@ function normalizeText(text: string): string {
 }
 
 function pdfDocOptions(buffer: Buffer) {
-  const copy = Buffer.from(buffer);
   return {
-    data: new Uint8Array(copy.buffer, copy.byteOffset, copy.byteLength),
+    data: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
     disableWorker: true,
     useSystemFonts: true,
     isEvalSupported: false,
@@ -237,10 +236,31 @@ async function renderPageToBuffer(pdf: PDFDocumentProxy, pageNumber: number): Pr
   return buffer;
 }
 
+// Singleton Tesseract worker — reused across OCR requests to avoid 2-3s init per request
+let workerPromise: Promise<Tesseract.Worker> | null = null;
+
+async function getOcrWorker(): Promise<Tesseract.Worker> {
+  if (!workerPromise) {
+    workerPromise = createWorker("eng");
+  }
+  return workerPromise;
+}
+
+/**
+ * Terminate the singleton OCR worker. Call this on graceful shutdown.
+ */
+export async function terminateOcrWorker(): Promise<void> {
+  if (workerPromise) {
+    const worker = await workerPromise;
+    await worker.terminate();
+    workerPromise = null;
+  }
+}
+
 async function extractOcrText(buffer: Buffer): Promise<string> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const pdf = await pdfjsLib.getDocument(pdfDocOptions(buffer)).promise;
-  const worker = await createWorker("eng");
+  const worker = await getOcrWorker();
   const pageTexts: string[] = [];
 
   try {
@@ -250,7 +270,6 @@ async function extractOcrText(buffer: Buffer): Promise<string> {
       pageTexts.push(data.text);
     }
   } finally {
-    await worker.terminate();
     await pdf.destroy();
   }
 

@@ -178,7 +178,7 @@ Rules:
           ],
           max_tokens: 4000,
           temperature: 0.3,
-        });
+        }, { signal: AbortSignal.timeout(120_000) });
       } catch (primaryErr) {
         const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
         if (fb) {
@@ -190,7 +190,7 @@ Rules:
             ],
             max_tokens: 4000,
             temperature: 0.3,
-          });
+          }, { signal: AbortSignal.timeout(120_000) });
         } else {
           throw primaryErr;
         }
