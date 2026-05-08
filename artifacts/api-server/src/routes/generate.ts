@@ -106,7 +106,7 @@ async function getAIClient() {
   // Log which AI provider is active
   const ollamaKey = process.env.OLLAMA_CLOUD_API_KEY?.trim();
   const provider = ollamaKey
-    ? "ollama-cloud"
+    ? "ollama"
     : process.env.OPENROUTER_API_KEY
       ? "openrouter"
       : "openai/replit";
@@ -115,7 +115,7 @@ async function getAIClient() {
     : process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   console.log(`[AI] Provider: ${provider}, BaseURL: ${baseURL}`);
   console.log(
-    `[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash-cloud"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b-cloud"}"`
+    `[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b"}"`
   );
   console.log(
     `[AI] Fallback: ${FALLBACK_MODEL}, Fallback available: ${getFallbackOpenAI() !== null}`
