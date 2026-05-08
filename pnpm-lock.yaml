@@ -525,6 +525,16 @@ importers:
         version: 4.21.0
 
   artifacts/mockup-sandbox:
+    dependencies:
+      '@react-spring/web':
+        specifier: ^10.0.3
+        version: 10.0.3(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@use-gesture/react':
+        specifier: ^10.3.1
+        version: 10.3.1(react@19.1.0)
+      canvas-confetti:
+        specifier: ^1.9.4
+        version: 1.9.4
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0
@@ -619,6 +629,9 @@ importers:
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.2.1(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
+      '@types/canvas-confetti':
+        specifier: ^1.9.0
+        version: 1.9.0
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
@@ -1895,6 +1908,33 @@ packages:
   '@radix-ui/rect@1.1.1':
     resolution: {integrity: sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==}
 
+  '@react-spring/animated@10.0.3':
+    resolution: {integrity: sha512-7MrxADV3vaUADn2V9iYhaIL6iOWRx9nCJjYrsk2AHD2kwPr6fg7Pt0v+deX5RnCDmCKNnD6W5fasiyM8D+wzJQ==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@react-spring/core@10.0.3':
+    resolution: {integrity: sha512-D4DwNO68oohDf/0HG2G0Uragzb9IA1oXblxrd6MZAcBcUQG2EHUWXewjdECMPLNmQvlYVyyBRH6gPxXM5DX7DQ==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@react-spring/rafz@10.0.3':
+    resolution: {integrity: sha512-Ri2/xqt8OnQ2iFKkxKMSF4Nqv0LSWnxXT4jXFzBDsHgeeH/cHxTLupAWUwmV9hAGgmEhBmh5aONtj3J6R/18wg==}
+
+  '@react-spring/shared@10.0.3':
+    resolution: {integrity: sha512-geCal66nrkaQzUVhPkGomylo+Jpd5VPK8tPMEDevQEfNSWAQP15swHm+MCRG4wVQrQlTi9lOzKzpRoTL3CA84Q==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@react-spring/types@10.0.3':
+    resolution: {integrity: sha512-H5Ixkd2OuSIgHtxuHLTt7aJYfhMXKXT/rK32HPD/kSrOB6q6ooeiWAXkBy7L8F3ZxdkBb9ini9zP9UwnEFzWgQ==}
+
+  '@react-spring/web@10.0.3':
+    resolution: {integrity: sha512-ndU+kWY81rHsT7gTFtCJ6mrVhaJ6grFmgTnENipzmKqot4HGf5smPNK+cZZJqoGeDsj9ZsiWPW4geT/NyD484A==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
   '@replit/vite-plugin-cartographer@0.5.1':
     resolution: {integrity: sha512-KiaQMx4ssTM8hSjMFscyIV1PN1bRVCWCFqN3fXOfXa39uFFCKUaeL3VvH/sxuy7S7ET+MCFOt+J7lLtL56bRrA==}
 
@@ -1976,14 +2016,12 @@ packages:
     engines: {node: '>= 20'}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@tailwindcss/oxide-linux-arm64-musl@4.2.4':
     resolution: {integrity: sha512-bBADEGAbo4ASnppIziaQJelekCxdMaxisrk+fB7Thit72IBnALp9K6ffA2G4ruj90G9XRS2VQ6q2bCKbfFV82g==}
     engines: {node: '>= 20'}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@tailwindcss/oxide-linux-x64-gnu@4.2.1':
     resolution: {integrity: sha512-qMFzxI2YlBOLW5PhblzuSWlWfwLHaneBE0xHzLrBgNtqN6mWfs+qYbhryGSXQjFYB1Dzf5w+LN5qbUTPhW7Y5g==}
@@ -2175,6 +2213,14 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+
+  '@use-gesture/core@10.3.1':
+    resolution: {integrity: sha512-WcINiDt8WjqBdUXye25anHiNxPc0VOrlT8F6LLkU6cycrOGUDyY/yyFmsg3k8i5OLvv25llc0QC45GhR/C8llw==}
+
+  '@use-gesture/react@10.3.1':
+    resolution: {integrity: sha512-Yy19y6O2GJq8f7CHf7L0nxL8bf4PZCPaVOCgJrusOeFHY1LvHgYXnmnXg6N5iwAnbgbZCDjo60SiM6IPJi9C5g==}
+    peerDependencies:
+      react: '>= 16.8.0'
 
   '@vitejs/plugin-react@5.1.4':
     resolution: {integrity: sha512-VIcFLdRi/VYRU8OL/puL7QXMYafHmqOnwTZY50U1JPlCNj30PxCMx65c494b1K9be9hX83KVt0+gTEwTWLqToA==}
@@ -5763,6 +5809,38 @@ snapshots:
 
   '@radix-ui/rect@1.1.1': {}
 
+  '@react-spring/animated@10.0.3(react@19.1.0)':
+    dependencies:
+      '@react-spring/shared': 10.0.3(react@19.1.0)
+      '@react-spring/types': 10.0.3
+      react: 19.1.0
+
+  '@react-spring/core@10.0.3(react@19.1.0)':
+    dependencies:
+      '@react-spring/animated': 10.0.3(react@19.1.0)
+      '@react-spring/shared': 10.0.3(react@19.1.0)
+      '@react-spring/types': 10.0.3
+      react: 19.1.0
+
+  '@react-spring/rafz@10.0.3': {}
+
+  '@react-spring/shared@10.0.3(react@19.1.0)':
+    dependencies:
+      '@react-spring/rafz': 10.0.3
+      '@react-spring/types': 10.0.3
+      react: 19.1.0
+
+  '@react-spring/types@10.0.3': {}
+
+  '@react-spring/web@10.0.3(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@react-spring/animated': 10.0.3(react@19.1.0)
+      '@react-spring/core': 10.0.3(react@19.1.0)
+      '@react-spring/shared': 10.0.3(react@19.1.0)
+      '@react-spring/types': 10.0.3
+      react: 19.1.0
+      react-dom: 19.1.0(react@19.1.0)
+
   '@replit/vite-plugin-cartographer@0.5.1':
     dependencies:
       '@babel/parser': 7.29.0
@@ -6059,6 +6137,13 @@ snapshots:
   '@types/unist@3.0.3': {}
 
   '@ungap/structured-clone@1.3.0': {}
+
+  '@use-gesture/core@10.3.1': {}
+
+  '@use-gesture/react@10.3.1(react@19.1.0)':
+    dependencies:
+      '@use-gesture/core': 10.3.1
+      react: 19.1.0
 
   '@vitejs/plugin-react@5.1.4(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
