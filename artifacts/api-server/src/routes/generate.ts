@@ -3,6 +3,7 @@ import { db, decksTable, cardsTable, qbanksTable, questionsTable } from "@worksp
 import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL, QBANK_MODEL } from "../lib/models";
 import { getEffectiveIsPro, sendLimitError } from "../lib/free-tier-limits";
 import { createRateLimiter } from "../lib/rate-limiter";
+import { generationCache, ResponseCache } from "../lib/response-cache";
 
 const router: IRouter = Router();
 
@@ -83,13 +84,21 @@ async function getAIClient() {
 
   // Log which AI provider is active
   const ollamaKey = process.env.OLLAMA_CLOUD_API_KEY?.trim();
-  const provider = ollamaKey ? "ollama-cloud" : process.env.OPENROUTER_API_KEY ? "openrouter" : "openai/replit";
+  const provider = ollamaKey
+    ? "ollama-cloud"
+    : process.env.OPENROUTER_API_KEY
+      ? "openrouter"
+      : "openai/replit";
   const baseURL = ollamaKey
-    ? (process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1")
+    ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
     : process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   console.log(`[AI] Provider: ${provider}, BaseURL: ${baseURL}`);
-  console.log(`[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash-cloud"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b-cloud"}"`);
-  console.log(`[AI] Fallback: ${FALLBACK_MODEL}, Fallback available: ${getFallbackOpenAI() !== null}`);
+  console.log(
+    `[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash-cloud"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b-cloud"}"`
+  );
+  console.log(
+    `[AI] Fallback: ${FALLBACK_MODEL}, Fallback available: ${getFallbackOpenAI() !== null}`
+  );
 
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
 }
@@ -218,17 +227,34 @@ function parseCardsFromAI(raw: string, pageNumber?: number | null): RawCard[] {
   }
 }
 
+// ─── Concurrency helper ────────────────────────────────────────────────────────
+
+async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
 // ─── Text card generation ─────────────────────────────────────────────────────
 
 async function generateTextCards(
+  openai: Awaited<ReturnType<typeof getAIClient>>["openai"],
+  getFallbackOpenAI: Awaited<ReturnType<typeof getAIClient>>["getFallbackOpenAI"],
+  FALLBACK_MODEL: string,
   text: string,
   totalTarget: number,
   pageTexts: string[],
   customPrompt: string | undefined,
-  onProgress: (pct: number, msg: string, count: number) => void
+  onProgress: (pct: number, msg: string, count: number) => void,
+  onPartialCards?: (cards: RawCard[]) => void
 ): Promise<RawCard[]> {
-  const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
-
   const sourceChunks: { text: string; pageNumber: number | null }[] = [];
 
   if (pageTexts.length > 0) {
@@ -244,20 +270,61 @@ async function generateTextCards(
 
   const cardsPerChunk = Math.max(1, Math.ceil(totalTarget / sourceChunks.length));
   const allCards: RawCard[] = [];
+  let completedCount = 0;
 
-  for (let i = 0; i < sourceChunks.length; i++) {
-    const chunk = sourceChunks[i];
-    const pct = Math.round((i / sourceChunks.length) * 85);
+  const tasks = sourceChunks.map((chunk, i) => async (): Promise<RawCard[]> => {
     const label = chunk.pageNumber != null ? `page ${chunk.pageNumber}` : `section ${i + 1}`;
-    onProgress(pct, `Generating cards from ${label} of ${sourceChunks.length}…`, allCards.length);
-
     const { system, user } = buildTextCardPrompt(chunk.text, cardsPerChunk, customPrompt);
+
+    // Check cache first
+    const textCacheKey = ResponseCache.hash(`${FREE_TEXT_MODEL}:${system}:${user}`);
+    const textCached = generationCache.get(textCacheKey);
+    if (textCached) {
+      console.log(`[generate] Text chunk ${i + 1}: cache hit`);
+      const raw = textCached;
+      const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+      const cards = parseCardsFromAI(stripped, chunk.pageNumber);
+      completedCount++;
+      const pct = Math.round((completedCount / sourceChunks.length) * 85);
+      allCards.push(...cards);
+      onProgress(pct, `Generated cards from ${label} (${completedCount}/${sourceChunks.length})…`, allCards.length);
+      onPartialCards?.(cards);
+      return cards;
+    }
+
+    let completion;
     try {
-      let completion;
-      try {
-        console.log(`[generate] Text chunk ${i + 1}/${sourceChunks.length}: calling model="${FREE_TEXT_MODEL}"`);
-        completion = await openai.chat.completions.create({
-          model: FREE_TEXT_MODEL,
+      console.log(
+        `[generate] Text chunk ${i + 1}/${sourceChunks.length}: calling model="${FREE_TEXT_MODEL}"`
+      );
+      completion = await openai.chat.completions.create({
+        model: FREE_TEXT_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        max_tokens: 4000,
+        temperature: 0.3,
+      });
+      console.log(
+        `[generate] Text chunk ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+      );
+      // Cache the raw response
+      const rawContent = completion.choices[0]?.message?.content ?? "";
+      generationCache.set(textCacheKey, rawContent);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      console.error(
+        `[generate] Text chunk ${i + 1}: PRIMARY model error (status=${status}):`,
+        err instanceof Error ? err.message : err
+      );
+      const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+      if (fb) {
+        console.log(
+          `[generate] Text chunk ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`
+        );
+        completion = await fb.chat.completions.create({
+          model: FALLBACK_MODEL,
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
@@ -265,49 +332,38 @@ async function generateTextCards(
           max_tokens: 4000,
           temperature: 0.3,
         });
-        console.log(`[generate] Text chunk ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`);
-      } catch (err) {
-        const status = (err as { status?: number }).status;
-        console.error(`[generate] Text chunk ${i + 1}: PRIMARY model error (status=${status}):`, err instanceof Error ? err.message : err);
-        const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
-        if (fb) {
-          console.log(`[generate] Text chunk ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`);
-          completion = await fb.chat.completions.create({
-            model: FALLBACK_MODEL,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-            max_tokens: 4000,
-            temperature: 0.3,
-          });
-        } else {
-          throw err;
-        }
+      } else {
+        throw err;
       }
-      const raw = completion.choices[0]?.message?.content ?? "";
-      // Strip reasoning block (e.g. <think>...</think>) from reasoning models
-      const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-      const cards = parseCardsFromAI(stripped, chunk.pageNumber);
-      console.log(`[generate] Text chunk ${i + 1}: parsed ${cards.length} cards`);
-      allCards.push(...cards);
-    } catch (err) {
-      // Propagate auth/credential errors immediately — don't silently skip
-      const status = (err as { status?: number }).status;
-      if (status === 401 || status === 403) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      if (/user not found|invalid.*key|unauthorized/i.test(msg)) throw err;
-      console.error(
-        `[generate] Chunk ${i + 1} failed (skipping):`,
-        err instanceof Error ? err.message : err
-      );
-      // Re-throw non-auth errors so the outer catch sends the error to the client
-      throw err;
     }
 
-    if (i < sourceChunks.length - 1) {
-      await new Promise((r) => setTimeout(r, 200));
-    }
+    const raw = completion.choices[0]?.message?.content ?? "";
+    const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    const cards = parseCardsFromAI(stripped, chunk.pageNumber);
+    console.log(`[generate] Text chunk ${i + 1}: parsed ${cards.length} cards`);
+
+    completedCount++;
+    const pct = Math.round((completedCount / sourceChunks.length) * 85);
+    allCards.push(...cards);
+    onProgress(
+      pct,
+      `Generated cards from ${label} (${completedCount}/${sourceChunks.length})…`,
+      allCards.length
+    );
+    onPartialCards?.(cards);
+
+    return cards;
+  });
+
+  try {
+    await runWithConcurrency(tasks, 4);
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status === 401 || status === 403) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/user not found|invalid.*key|unauthorized/i.test(msg)) throw err;
+    console.error(`[generate] Chunk failed:`, err instanceof Error ? err.message : err);
+    throw err;
   }
 
   return allCards.slice(0, totalTarget * 2);
@@ -316,6 +372,9 @@ async function generateTextCards(
 // ─── Visual card generation ───────────────────────────────────────────────────
 
 async function generateVisualCards(
+  openai: Awaited<ReturnType<typeof getAIClient>>["openai"],
+  getFallbackOpenAI: Awaited<ReturnType<typeof getAIClient>>["getFallbackOpenAI"],
+  FALLBACK_MODEL: string,
   pageImages: string[],
   _pageImageRegions: ImageRegion[][],
   visualCardCount: number,
@@ -324,20 +383,12 @@ async function generateVisualCards(
 ): Promise<StagedCard[]> {
   if (pageImages.length === 0) return [];
 
-  const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
   const allCards: StagedCard[] = [];
   const maxPerPage = Math.max(1, Math.ceil(visualCardCount / pageImages.length));
+  let completedVisual = 0;
 
-  for (let i = 0; i < pageImages.length; i++) {
-    const pct = 20 + Math.round((i / pageImages.length) * 60);
-    onProgress(
-      pct,
-      `Analysing page ${i + 1} of ${pageImages.length} for visual elements…`,
-      allCards.length
-    );
-
-    const base64 = pageImages[i];
-    if (!base64 || base64.length < 100) continue;
+  const tasks = pageImages.map((base64, i) => async (): Promise<void> => {
+    if (!base64 || base64.length < 100) return;
 
     const custom = customPrompt?.trim()
       ? `\n\nAdditional instructions: ${customPrompt.trim()}`
@@ -359,7 +410,9 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
       const dataUrl = base64.startsWith("data:") ? base64 : `data:image/jpeg;base64,${base64}`;
       let completion;
       try {
-        console.log(`[generate] Visual page ${i + 1}/${pageImages.length}: calling model="${VISUAL_DETECTION_MODEL}"`);
+        console.log(
+          `[generate] Visual page ${i + 1}/${pageImages.length}: calling model="${VISUAL_DETECTION_MODEL}"`
+        );
         completion = await openai.chat.completions.create({
           model: VISUAL_DETECTION_MODEL,
           messages: [
@@ -374,13 +427,20 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
           max_tokens: 1024,
           temperature: 0.2,
         });
-        console.log(`[generate] Visual page ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`);
+        console.log(
+          `[generate] Visual page ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+        );
       } catch (err) {
         const status = (err as { status?: number }).status;
-        console.error(`[generate] Visual page ${i + 1}: PRIMARY model error (status=${status}):`, err instanceof Error ? err.message : err);
+        console.error(
+          `[generate] Visual page ${i + 1}: PRIMARY model error (status=${status}):`,
+          err instanceof Error ? err.message : err
+        );
         const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
         if (fb) {
-          console.log(`[generate] Visual page ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`);
+          console.log(
+            `[generate] Visual page ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`
+          );
           completion = await fb.chat.completions.create({
             model: FALLBACK_MODEL,
             messages: [
@@ -404,7 +464,7 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
       const match = rawText.match(/\[[\s\S]*\]/);
       if (!match) {
         console.log(`[generate] Visual page ${i + 1}: no JSON array found in response`);
-        continue;
+        return;
       }
 
       const parsed = JSON.parse(match[0]) as Array<{
@@ -417,7 +477,6 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
       for (const item of parsed) {
         if (!item.front?.trim() || !item.back?.trim()) continue;
         const bbox = Array.isArray(item.bbox) && item.bbox.length === 4 ? item.bbox : null;
-        // Server-side filter: reject bboxes that are too large (likely the whole page)
         if (bbox && (bbox[2] > 0.7 || bbox[3] > 0.7)) continue;
 
         const card: StagedCard = {
@@ -437,10 +496,16 @@ Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
       );
     }
 
-    if (i < pageImages.length - 1) {
-      await new Promise((r) => setTimeout(r, 300));
-    }
-  }
+    completedVisual++;
+    const pct = 20 + Math.round((completedVisual / pageImages.length) * 60);
+    onProgress(
+      pct,
+      `Analysing page ${i + 1} of ${pageImages.length} for visual elements…`,
+      allCards.length
+    );
+  });
+
+  await runWithConcurrency(tasks, 2);
 
   return allCards.slice(0, visualCardCount);
 }
@@ -545,31 +610,46 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
   };
 
   try {
+    // Initialize AI client once, pass to all generation functions
+    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
+
     const allCards: StagedCard[] = [];
 
-    // Text card generation
+    // Text card generation (parallel chunks)
     if ((deckType === "text" || deckType === "both") && text.trim()) {
       sendProgress(0, "Starting text card generation…", 0, "generating");
+      const onTextProgress = (pct: number, msg: string, count: number) =>
+        sendProgress(Math.round(pct * 0.7), msg, count, "generating");
+      const onPartialCards = (cards: RawCard[]) => {
+        sendSSE(res, { type: "partial_cards", cards, stage: "generating" });
+      };
       const textCards = await generateTextCards(
+        openai,
+        getFallbackOpenAI,
+        FALLBACK_MODEL,
         text,
         targetCards,
         pageTexts,
         customPrompt,
-        (pct, msg, count) => sendProgress(Math.round(pct * 0.7), msg, count, "generating")
+        onTextProgress,
+        onPartialCards
       );
       allCards.push(...textCards);
       sendProgress(70, `Generated ${textCards.length} text cards`, allCards.length, "saving");
     }
 
-    // Visual card generation
+    // Visual card generation (parallel pages)
     if ((deckType === "visual" || deckType === "both") && pageImages.length > 0) {
       sendProgress(70, "Analysing pages for visual elements…", allCards.length, "visual");
       const visualCards = await generateVisualCards(
+        openai,
+        getFallbackOpenAI,
+        FALLBACK_MODEL,
         pageImages,
         pageImageRegions,
         targetVisual,
         customPrompt,
-        (pct, msg, count) =>
+        (pct: number, msg: string, count: number) =>
           sendProgress(70 + Math.round(pct * 0.25), msg, allCards.length + count, "visual")
       );
       allCards.push(...visualCards);
@@ -709,18 +789,54 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
     const chunks = splitIntoChunks(text);
     const questionsPerChunk = Math.max(1, Math.ceil(targetQuestions / chunks.length));
     const allQuestions: RawCard[] = [];
+    let qbankCompleted = 0;
 
-    for (let i = 0; i < chunks.length; i++) {
-      const pct = Math.round((i / chunks.length) * 85);
-      sendProgress(pct, `Generating questions from section ${i + 1} of ${chunks.length}…`);
+    const tasks = chunks.map((chunk, i) => async (): Promise<void> => {
+      const { system, user } = buildQBankPrompt(chunk, questionsPerChunk, customPrompt);
 
-      const { system, user } = buildQBankPrompt(chunks[i], questionsPerChunk, customPrompt);
+      // Check cache first
+      const qbankCacheKey = ResponseCache.hash(`${QBANK_MODEL}:${system}:${user}`);
+      const qbankCached = generationCache.get(qbankCacheKey);
+      if (qbankCached) {
+        console.log(`[generate-qbank] Chunk ${i + 1}: cache hit`);
+        const parsed = parseCardsFromAI(qbankCached, null);
+        allQuestions.push(...parsed);
+        qbankCompleted++;
+        const pct = Math.round((qbankCompleted / chunks.length) * 85);
+        sendProgress(pct, `Generated questions from section ${i + 1} of ${chunks.length}…`);
+        return;
+      }
+
+      let completion;
       try {
-        let completion;
-        try {
-          console.log(`[generate-qbank] Chunk ${i + 1}/${chunks.length}: calling model="${QBANK_MODEL}"`);
-          completion = await openai.chat.completions.create({
-            model: QBANK_MODEL,
+        console.log(
+          `[generate-qbank] Chunk ${i + 1}/${chunks.length}: calling model="${QBANK_MODEL}"`
+        );
+        completion = await openai.chat.completions.create({
+          model: QBANK_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          max_tokens: 4000,
+          temperature: 0.3,
+        });
+        console.log(
+          `[generate-qbank] Chunk ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+        );
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        console.error(
+          `[generate-qbank] Chunk ${i + 1}: PRIMARY model error (status=${status}):`,
+          err instanceof Error ? err.message : err
+        );
+        const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+        if (fb) {
+          console.log(
+            `[generate-qbank] Chunk ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`
+          );
+          completion = await fb.chat.completions.create({
+            model: FALLBACK_MODEL,
             messages: [
               { role: "system", content: system },
               { role: "user", content: user },
@@ -728,39 +844,24 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
             max_tokens: 4000,
             temperature: 0.3,
           });
-          console.log(`[generate-qbank] Chunk ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`);
-        } catch (err) {
-          const status = (err as { status?: number }).status;
-          console.error(`[generate-qbank] Chunk ${i + 1}: PRIMARY model error (status=${status}):`, err instanceof Error ? err.message : err);
-          const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
-          if (fb) {
-            console.log(`[generate-qbank] Chunk ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`);
-            completion = await fb.chat.completions.create({
-              model: FALLBACK_MODEL,
-              messages: [
-                { role: "system", content: system },
-                { role: "user", content: user },
-              ],
-              max_tokens: 4000,
-              temperature: 0.3,
-            });
-          } else {
-            throw err;
-          }
+        } else {
+          throw err;
         }
-        const parsed = parseCardsFromAI(completion.choices[0]?.message?.content ?? "", null);
-        console.log(`[generate-qbank] Chunk ${i + 1}: parsed ${parsed.length} questions`);
-        allQuestions.push(...parsed);
-      } catch (err) {
-        console.error(
-          `[generate-qbank] Chunk ${i + 1} failed:`,
-          err instanceof Error ? err.message : err
-        );
-        // Re-throw so the outer catch block sends the error SSE to the client
-        throw err;
       }
+      const parsed = parseCardsFromAI(completion.choices[0]?.message?.content ?? "", null);
+      console.log(`[generate-qbank] Chunk ${i + 1}: parsed ${parsed.length} questions`);
+      allQuestions.push(...parsed);
 
-      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 200));
+      qbankCompleted++;
+      const pct = Math.round((qbankCompleted / chunks.length) * 85);
+      sendProgress(pct, `Generated questions from section ${i + 1} of ${chunks.length}…`);
+    });
+
+    try {
+      await runWithConcurrency(tasks, 3);
+    } catch (err) {
+      console.error(`[generate-qbank] Chunk failed:`, err instanceof Error ? err.message : err);
+      throw err;
     }
 
     sendProgress(90, "Saving question bank…");

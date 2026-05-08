@@ -46,19 +46,15 @@ export default defineConfig({
     apkMimePlugin(),
     ...(isReplit
       ? [
-          await import("@replit/vite-plugin-runtime-error-modal").then((m) =>
-            m.default(),
-          ),
+          await import("@replit/vite-plugin-runtime-error-modal").then((m) => m.default()),
           ...(process.env.NODE_ENV !== "production"
             ? [
                 await import("@replit/vite-plugin-cartographer").then((m) =>
                   m.cartographer({
                     root: path.resolve(import.meta.dirname, ".."),
-                  }),
+                  })
                 ),
-                await import("@replit/vite-plugin-dev-banner").then((m) =>
-                  m.devBanner(),
-                ),
+                await import("@replit/vite-plugin-dev-banner").then((m) => m.devBanner()),
               ]
             : []),
         ]
@@ -75,6 +71,17 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom"],
+          "vendor-motion": ["framer-motion"],
+          "vendor-markdown": ["react-markdown", "remark-gfm"],
+          "vendor-query": ["@tanstack/react-query"],
+        },
+      },
+    },
+    target: "es2022",
   },
   server: {
     port,
@@ -91,11 +98,7 @@ export default defineConfig({
       deny: ["**/.*"],
     },
     watch: {
-      ignored: [
-        "**/android/**",
-        "**/dist/**",
-        "**/node_modules/**",
-      ],
+      ignored: ["**/android/**", "**/dist/**", "**/node_modules/**"],
     },
   },
   preview: {

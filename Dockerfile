@@ -38,7 +38,7 @@ COPY artifacts/anki-generator/package.json   ./artifacts/anki-generator/
 COPY artifacts/api-server/package.json       ./artifacts/api-server/
 COPY artifacts/mockup-sandbox/package.json   ./artifacts/mockup-sandbox/
 
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile=true || pnpm install --frozen-lockfile=false
 
 
 # ─── Build ─────────────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ COPY --from=build /app/artifacts/api-server/package.json ./artifacts/api-server/
 COPY --from=build /app/artifacts/api-server/dist          ./artifacts/api-server/dist
 COPY --from=build /app/artifacts/anki-generator/dist/public ./public
 
-RUN pnpm install --prod --frozen-lockfile=false --filter @workspace/api-server... \
+RUN pnpm install --prod --frozen-lockfile=true --filter @workspace/api-server... 2>/dev/null || pnpm install --prod --frozen-lockfile=false --filter @workspace/api-server... \
     && pnpm store prune
 
 EXPOSE 8080

@@ -63,6 +63,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { SourcePageModal, type VisualCardRef } from "@/components/source-page-modal";
 import { AmbientOrbs } from "@/components/ambient-orbs";
 import { PageHeader } from "@/components/page-header";
+import { ExplanationSectionCard, ExplanationSkeleton } from "@/components/explanation-section";
+import { parseSections } from "@/lib/explain-sections";
 
 type DeckWithSubDecks = Deck & { subDecks?: Deck[] };
 
@@ -211,7 +213,7 @@ function BriefBreakdownView({ text, isStreaming }: { text: string; isStreaming: 
   );
 }
 
-function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMode = false }: {
+function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMode = false, lightboxSrc, setLightboxSrc }: {
   cards: Card[];
   deckId: number;
   deckName: string;
@@ -219,6 +221,8 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
   onExit: () => void;
   savePoint?: StudySavePoint | null;
   srsMode?: boolean;
+  lightboxSrc: string | null;
+  setLightboxSrc: (src: string | null) => void;
 }) {
   const isQbank = deckKind === "qbank";
   const { toast } = useToast();
@@ -284,9 +288,8 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
   const [isExplaining, setIsExplaining] = useState(false);
   const isExplainingRef = useRef(false);
 
-  // Streaming animation refs
+  // Streaming ref
   const streamedRef = useRef("");        // full text from stream
-  const revealPosRef = useRef(0);        // how many chars are currently shown
   const revealTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // History: last 5 explanations for current card (reset on card change)
@@ -306,7 +309,6 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
   // Touch-swipe for history navigation in drawer
   const swipeStartXRef = useRef(0);
 
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const EXPLAIN_LABELS: Record<ExplainMode, string> = {
     full: "Full Explanation",
@@ -329,7 +331,6 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
     if (revealTimerRef.current) { clearInterval(revealTimerRef.current); revealTimerRef.current = null; }
 
     streamedRef.current = "";
-    revealPosRef.current = 0;
     setDisplayText("");
     setExplainMode(mode);
     setHistoryIdx(null);
@@ -339,40 +340,6 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
     // Persist last-used mode
     localStorage.setItem(`ankigen-last-mode-${deckId}`, mode);
     setLastMode(mode);
-
-    // Word-by-word reveal: one word per 20ms; records history once animation catches up
-    const recordHistory = (text: string) => {
-      if (text && !text.startsWith("Failed") && !text.startsWith("Could not")) {
-        setExplainHistory(prev => [{ mode, text }, ...prev.filter((_, i) => i < 4)]);
-      }
-    };
-    revealTimerRef.current = setInterval(() => {
-      const target = streamedRef.current;
-      let pos = revealPosRef.current;
-      // All text already visible
-      if (pos >= target.length) {
-        if (!isExplainingRef.current) {
-          clearInterval(revealTimerRef.current!);
-          revealTimerRef.current = null;
-          recordHistory(target);
-        }
-        return;
-      }
-      // Skip any leading whitespace at current position
-      while (pos < target.length && /\s/.test(target[pos])) pos++;
-      // Advance through one word (non-whitespace)
-      while (pos < target.length && !/\s/.test(target[pos])) pos++;
-      // Consume trailing whitespace so next tick starts at a clean word boundary
-      while (pos < target.length && /\s/.test(target[pos])) pos++;
-      revealPosRef.current = pos;
-      setDisplayText(target.slice(0, pos));
-      // Animation just caught up to end of completed stream — record history once
-      if (!isExplainingRef.current && pos >= target.length) {
-        clearInterval(revealTimerRef.current!);
-        revealTimerRef.current = null;
-        recordHistory(streamedRef.current);
-      }
-    }, 20);
 
     try {
       const resp = await fetch(apiUrl("api/explain"), {
@@ -393,6 +360,8 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
         const errMsg = err.error ?? "Could not get an explanation.";
         streamedRef.current = errMsg;
         setDisplayText(errMsg);
+        setIsExplaining(false);
+        isExplainingRef.current = false;
         return;
       }
       const reader = resp.body.getReader();
@@ -403,6 +372,11 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
         if (streamDone) break;
         text += decoder.decode(value, { stream: true });
         streamedRef.current = text;
+        setDisplayText(text);
+      }
+      // Record history once streaming completes
+      if (text && !text.startsWith("Failed") && !text.startsWith("Could not")) {
+        setExplainHistory(prev => [{ mode, text }, ...prev.filter((_, i) => i < 4)]);
       }
     } catch {
       const errMsg = "Failed to get an explanation. Please try again.";
@@ -411,8 +385,6 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
     } finally {
       isExplainingRef.current = false;
       setIsExplaining(false);
-      // Let the reveal timer naturally finish the word-by-word animation and
-      // record history once it reaches the end of streamedRef.current
     }
   }, [current, isExplaining, deckId]);
 
@@ -521,7 +493,7 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
     setShowCardNotes(false);
     if (revealTimerRef.current) { clearInterval(revealTimerRef.current); revealTimerRef.current = null; }
     streamedRef.current = "";
-    revealPosRef.current = 0;
+
     setTimeout(() => { fn(); setFlipping(false); }, 150);
   }, []);
 
@@ -1356,17 +1328,45 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
                 {/* Drawer body */}
                 <div className="px-5 py-5 overflow-y-auto flex-1">
                   {isExplaining && historyIdx === null && (!activeText || activeText.length === 0) ? (
-                    <div className="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
-                      <div className={`h-10 w-10 rounded-full border-2 animate-spin ${
-                        isViolet ? "border-violet-200 border-t-violet-500"
-                        : isAmber ? "border-amber-200 border-t-amber-500"
-                        : isRose  ? "border-rose-200 border-t-rose-500"
-                        : "border-primary/20 border-t-primary"
-                      }`} />
-                      <p className="text-sm">Generating {activeMode ? EXPLAIN_LABELS[activeMode] : "explanation"}…</p>
-                    </div>
+                    <ExplanationSkeleton />
                   ) : activeMode === "brief" ? (
                     <BriefBreakdownView text={activeText} isStreaming={isExplaining && historyIdx === null} />
+                  ) : activeMode === "full" || activeMode === "revision" || activeMode === "clinical" ? (
+                    (() => {
+                      const sections = parseSections(activeText);
+                      return sections.length > 1 ? (
+                        <div>
+                          {sections.map((section, i) => (
+                            <ExplanationSectionCard
+                              key={`${section.title}-${i}`}
+                              section={section}
+                              index={i}
+                              isStreaming={isExplaining && historyIdx === null && i === sections.length - 1}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="prose prose-sm dark:prose-invert max-w-none
+                          prose-headings:font-semibold prose-headings:text-foreground
+                          prose-h1:text-xl prose-h1:mt-6 prose-h1:mb-3
+                          prose-h2:text-lg prose-h2:mt-5 prose-h2:mb-2 prose-h2:border-b prose-h2:border-border/40 prose-h2:pb-1
+                          prose-h3:text-base prose-h3:mt-4 prose-h3:mb-1.5
+                          prose-p:text-foreground prose-p:leading-relaxed prose-p:my-2
+                          prose-strong:text-foreground prose-strong:font-semibold
+                          prose-ul:my-2 prose-li:my-0.5 prose-ol:my-2
+                          prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs
+                          prose-blockquote:border-primary/40 prose-blockquote:text-muted-foreground
+                          prose-hr:border-border/40
+                        ">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {activeText}
+                          </ReactMarkdown>
+                          {isExplaining && historyIdx === null && (
+                            <span className="inline-block w-1.5 h-4 bg-primary/60 ml-0.5 animate-pulse rounded-sm align-middle" />
+                          )}
+                        </div>
+                      );
+                    })()
                   ) : (
                     <div className="prose prose-sm dark:prose-invert max-w-none
                       prose-headings:font-semibold prose-headings:text-foreground
@@ -1424,6 +1424,7 @@ export default function DeckDetail() {
   const [deckTags, setDeckTagsLocal] = useState<string[]>(() => getDeckTags(deckId));
   const [tagAddInput, setTagAddInput] = useState("");
   const [tagAddOpen, setTagAddOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   useEffect(() => { setDeckTagsLocal(getDeckTags(deckId)); }, [deckId]);
   useEffect(() => {
@@ -1631,6 +1632,8 @@ export default function DeckDetail() {
           deckKind={(deck as Deck & { kind?: string }).kind}
           savePoint={studyDueOnly ? null : activeSavePoint}
           srsMode={true}
+          lightboxSrc={lightboxSrc}
+          setLightboxSrc={setLightboxSrc}
           onExit={() => { setStudyMode(false); setActiveSavePoint(null); setStudyDueOnly(false); }}
         />
       </div>

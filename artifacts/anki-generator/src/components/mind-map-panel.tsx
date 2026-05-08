@@ -608,22 +608,30 @@ export function MindMapGallery({
     setGenerating(true);
     setGenProgress({ done: 0, total: chunks.length });
 
-    for (const chunk of chunks) {
-      try {
-        const resp = await fetch(apiUrl("api/mind-map"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            topic: deckName,
-            cards: chunk.map(c => ({ front: c.front, back: c.back })),
-          }),
-        });
-        if (resp.ok) {
-          const data = await resp.json() as MindMapNode;
-          await createMap({ title: data.center, data, cardCount: chunk.length });
-        }
-      } catch { /* skip failed chunk */ }
-      setGenProgress(p => ({ ...p, done: p.done + 1 }));
+    let completed = 0;
+
+    // Process chunks in parallel batches of 2
+    const CONCURRENCY = 2;
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const batch = chunks.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(async (chunk) => {
+        try {
+          const resp = await fetch(apiUrl("api/mind-map"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              topic: deckName,
+              cards: chunk.map(c => ({ front: c.front, back: c.back })),
+            }),
+          });
+          if (resp.ok) {
+            const data = await resp.json() as MindMapNode;
+            await createMap({ title: data.center, data, cardCount: chunk.length });
+          }
+        } catch { /* skip failed chunk */ }
+        completed++;
+        setGenProgress(p => ({ ...p, done: completed }));
+      }));
     }
 
     setGenerating(false);

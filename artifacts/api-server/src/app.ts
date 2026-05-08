@@ -13,12 +13,12 @@ const app: Express = express();
 // Register Stripe webhook route BEFORE any body-parsing middleware.
 // Stripe requires the raw Buffer to verify the signature.
 app.post(
-  '/api/stripe/webhook',
-  express.raw({ type: 'application/json' }),
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
   async (req: Request, res: Response) => {
-    const signature = req.headers['stripe-signature'];
+    const signature = req.headers["stripe-signature"];
     if (!signature) {
-      res.status(400).json({ error: 'Missing stripe-signature header' });
+      res.status(400).json({ error: "Missing stripe-signature header" });
       return;
     }
     try {
@@ -26,8 +26,8 @@ app.post(
       await WebhookHandlers.processWebhook(req.body as Buffer, sig);
       res.status(200).json({ received: true });
     } catch (err: any) {
-      logger.error({ err }, 'Stripe webhook error');
-      res.status(400).json({ error: 'Webhook processing error' });
+      logger.error({ err }, "Stripe webhook error");
+      res.status(400).json({ error: "Webhook processing error" });
     }
   }
 );
@@ -50,7 +50,7 @@ app.use(
         };
       },
     },
-  }),
+  })
 );
 app.use(cors());
 app.use(express.json({ limit: "200mb" }));
@@ -58,22 +58,23 @@ app.use(express.urlencoded({ extended: true, limit: "200mb" }));
 
 app.use("/api", router);
 
-const staticDir =
-  process.env.STATIC_DIR ??
-  path.resolve(process.cwd(), "public");
+const staticDir = process.env.STATIC_DIR ?? path.resolve(process.cwd(), "public");
 
 if (fs.existsSync(staticDir)) {
   logger.info({ staticDir }, "Serving static frontend");
   app.use(
     express.static(staticDir, {
       index: false,
-      maxAge: "1h",
+      maxAge: "1y",
+      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         }
       },
-    }),
+    })
   );
 
   app.get(/^(?!\/api\/).*/, (_req: Request, res: Response, next: NextFunction) => {
