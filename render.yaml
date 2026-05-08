@@ -19,7 +19,7 @@ services:
         fromDatabase:
           name: anki-generator-db
           property: connectionString
-      # Ollama Cloud (primary AI provider)
+      # qwen3-coder:latest (primary AI provider)
       - key: OLLAMA_CLOUD_API_KEY
         sync: false
       - key: OLLAMA_CLOUD_BASE_URL

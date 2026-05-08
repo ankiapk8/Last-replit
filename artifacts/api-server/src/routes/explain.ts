@@ -18,7 +18,7 @@ async function getOpenAIClient() {
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI explanation is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY."
+      "AI explanation is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY."
     );
   }
   const { openai, getFallbackOpenAI, FALLBACK_MODEL } =

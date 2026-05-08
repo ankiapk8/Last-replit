@@ -37,7 +37,7 @@ router.post("/mind-map", async (req, res): Promise<void> => {
       .status(503)
       .json({
         error:
-          "AI is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY.",
+          "AI is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY.",
       });
     return;
   }

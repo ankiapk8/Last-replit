@@ -2,7 +2,7 @@ import OpenAI from "openai";
 
 /**
  * Provider priority:
- *  1. OLLAMA_CLOUD_API_KEY → Ollama Cloud (primary)
+ *  1. OLLAMA_CLOUD_API_KEY → qwen3-coder:latest (primary)
  *  2. OPENROUTER_API_KEY   → OpenRouter (fallback backend)
  *  3. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
  *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
@@ -42,7 +42,7 @@ export const openai = new OpenAI({
 
 if (!apiKey) {
   console.warn(
-    "[integrations-openai] No API key found. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or OPENROUTER_API_KEY / OPENAI_API_KEY. Requests will fail."
+    "[integrations-openai] No API key found. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or OPENROUTER_API_KEY / OPENAI_API_KEY. Requests will fail."
   );
 } else {
   const keySource = ollamaCloudKey
@@ -67,7 +67,7 @@ export const FALLBACK_MODEL = "gpt-4o-mini";
  * Returns null if no fallback key is available.
  */
 export function getFallbackOpenAI(): OpenAI | null {
-  // If primary is Ollama Cloud, try OpenRouter as fallback
+  // If primary is qwen3-coder:latest, try OpenRouter as fallback
   if (ollamaCloudKey && process.env.OPENROUTER_API_KEY) {
     return new OpenAI({
       apiKey: process.env.OPENROUTER_API_KEY,

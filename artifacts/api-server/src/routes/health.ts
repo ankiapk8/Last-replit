@@ -68,13 +68,13 @@ async function checkAiProvider(): Promise<CheckResult> {
     return {
       status: "fail",
       message:
-        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY.",
+        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY.",
     };
   } catch {
     return {
       status: "fail",
       message:
-        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY.",
+        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY.",
     };
   }
 }

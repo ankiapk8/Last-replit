@@ -67,7 +67,7 @@ describe("client.ts — getFallbackOpenAI", () => {
     restoreEnv;
   });
 
-  it("returns OpenRouter client when primary is Ollama Cloud and OpenRouter key exists", async () => {
+  it("returns OpenRouter client when primary is qwen3-coder:latest and OpenRouter key exists", async () => {
     vi.resetModules();
     clearAllApiKeys();
     process.env.OLLAMA_CLOUD_API_KEY = "ollama-key";
@@ -77,7 +77,7 @@ describe("client.ts — getFallbackOpenAI", () => {
     expect(fallback).not.toBeNull();
   });
 
-  it("returns null when only Ollama Cloud key is set (no fallback provider)", async () => {
+  it("returns null when only qwen3-coder:latest key is set (no fallback provider)", async () => {
     vi.resetModules();
     clearAllApiKeys();
     process.env.OLLAMA_CLOUD_API_KEY = "ollama-key";

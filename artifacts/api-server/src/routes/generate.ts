@@ -97,7 +97,7 @@ async function getAIClient() {
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI is not configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY."
+      "AI is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY."
     );
   }
   const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
@@ -707,7 +707,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
         : status === 404
           ? `AI model '${FREE_TEXT_MODEL}' not found. Check your model name in .env.`
           : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-            ? "AI provider quota exceeded. Check your Ollama Cloud or OpenRouter account."
+            ? "AI provider quota exceeded. Check your qwen3-coder:latest or OpenRouter account."
             : /context length|maximum context|too many tokens/i.test(message)
               ? "Content is too long for this AI model. Try shorter text or fewer pages."
               : /not configured|api key/i.test(message)
@@ -939,7 +939,7 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
         : status === 404
           ? `AI model '${QBANK_MODEL}' not found. Check your model name in .env.`
           : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-            ? "AI provider quota exceeded. Check your Ollama Cloud or OpenRouter account."
+            ? "AI provider quota exceeded. Check your qwen3-coder:latest or OpenRouter account."
             : /not configured|api key/i.test(message)
               ? message
               : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)

@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 
 /**
  * Provider priority (matches client.ts):
- *  1. OLLAMA_CLOUD_API_KEY → Ollama Cloud (primary)
+ *  1. OLLAMA_CLOUD_API_KEY → qwen3-coder:latest (primary)
  *  2. OPENROUTER_API_KEY   → OpenRouter (fallback)
  *  3. OPENAI_API_KEY       → OpenAI
  *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
@@ -21,7 +21,7 @@ const apiKey = ollamaCloudKey
 
 if (!apiKey) {
   throw new Error(
-    "No AI provider configured. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or set OPENROUTER_API_KEY."
+    "No AI provider configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY."
   );
 }
 
