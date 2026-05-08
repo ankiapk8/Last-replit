@@ -95,6 +95,34 @@ router.get("/model-info", (_req, res) => {
   });
 });
 
+/**
+ * POST /api/test-model — Quick smoke test for a specific model.
+ * Body: { model: string, prompt?: string }
+ * Returns the AI response or error details.
+ */
+router.post("/test-model", async (req, res): Promise<void> => {
+  const { model, prompt = "Reply with OK" } = req.body as { model?: string; prompt?: string };
+  if (!model) { res.status(400).json({ error: "model is required" }); return; }
+
+  try {
+    const { openai } = await import("@workspace/integrations-openai-ai-server");
+    const start = Date.now();
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 50,
+      temperature: 0.1,
+    });
+    const latencyMs = Date.now() - start;
+    const content = completion.choices[0]?.message?.content ?? "";
+    res.json({ ok: true, model, latencyMs, response: content.slice(0, 200) });
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, model, status, error: message });
+  }
+});
+
 router.get("/healthz", async (_req, res) => {
   const [database, ai] = await Promise.all([checkDatabase(), checkAiProvider()]);
 

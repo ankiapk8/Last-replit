@@ -26,7 +26,7 @@ if (!apiKey) {
 }
 
 const baseURL = ollamaCloudKey
-  ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
+  ? process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1"
   : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
     process.env.OPENROUTER_BASE_URL ||
     "https://openrouter.ai/api/v1";

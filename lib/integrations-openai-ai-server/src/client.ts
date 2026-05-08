@@ -18,7 +18,7 @@ const apiKey = ollamaCloudKey
     process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 
 const baseURL = ollamaCloudKey
-  ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
+  ? process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1"
   : process.env.OPENROUTER_BASE_URL ||
     (process.env.OPENROUTER_API_KEY ? "https://openrouter.ai/api/v1" : undefined) ||
     process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
@@ -44,6 +44,9 @@ if (!apiKey) {
   console.warn(
     "[integrations-openai] No API key found. Set OLLAMA_CLOUD_API_KEY for Ollama Cloud, or OPENROUTER_API_KEY / OPENAI_API_KEY. Requests will fail."
   );
+} else {
+  const keySource = ollamaCloudKey ? "OLLAMA_CLOUD_API_KEY" : process.env.OPENROUTER_API_KEY ? "OPENROUTER_API_KEY" : process.env.OPENAI_API_KEY1 ? "OPENAI_API_KEY1" : process.env.OPENAI_API_KEY ? "OPENAI_API_KEY" : "AI_INTEGRATIONS_OPENAI_API_KEY";
+  console.log(`[integrations-openai] Initialized — provider=${isOpenRouter ? "openrouter" : ollamaCloudKey ? "ollama-cloud" : "openai"}, baseURL=${baseURL}, keySource=${keySource}`);
 }
 
 export const FALLBACK_MODEL = "gpt-4o-mini";

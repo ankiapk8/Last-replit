@@ -249,13 +249,14 @@ router.post("/explain", async (req, res): Promise<void> => {
 
   const streamPayload = {
     model: EXPLAIN_MODEL,
-    max_completion_tokens: maxTokens,
+    max_tokens: maxTokens,
     stream: true as const,
     messages: [
       { role: "system" as const, content: systemPrompt },
       { role: "user" as const, content: userPrompt },
     ],
   };
+  console.log(`[explain] Streaming with model="${EXPLAIN_MODEL}", max_tokens=${maxTokens}`);
 
   try {
     let stream;

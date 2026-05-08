@@ -83,8 +83,12 @@ Rules:
   try {
     let completion;
     try {
+      console.log(`[mind-map] Calling model="${MINDMAP_MODEL}"`);
       completion = await makeRequest(openai, MINDMAP_MODEL);
+      console.log(`[mind-map] Response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`);
     } catch (primaryErr) {
+      const status = (primaryErr as { status?: number }).status;
+      console.error(`[mind-map] PRIMARY model error (status=${status}):`, primaryErr instanceof Error ? primaryErr.message : primaryErr);
       const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
         console.warn("[mind-map] AI provider limit hit — falling back to backup model");
@@ -97,8 +101,10 @@ Rules:
     const rawContent = completion.choices[0]?.message?.content ?? "";
     // Strip reasoning blocks emitted by thinking models (e.g. <think>...</think>)
     const raw = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    console.log(`[mind-map] Raw response (first 200 chars): ${raw.slice(0, 200)}`);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.error("[mind-map] No JSON object found in response");
       res.status(500).json({ error: "AI returned invalid mind map format. Please try again." });
       return;
     }
@@ -107,6 +113,7 @@ Rules:
   } catch (err) {
     const message = err instanceof Error ? err.message : "Mind map generation failed.";
     const status = (err as { status?: number }).status;
+    console.error(`[mind-map] Generation failed (status=${status}):`, message);
     const friendly =
       status === 404
         ? `AI model '${MINDMAP_MODEL}' not found. Check your model name in .env.`
