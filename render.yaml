@@ -29,13 +29,13 @@ services:
         sync: false
       # Per-feature model selection
       - key: AI_TEXT_MODEL
-        value: qwen3-coder:480b
+        value: qwen3-coder:480b-cloud
       - key: AI_VISION_MODEL
-        value: qwen3-vl:235b
+        value: qwen3-vl:235b-cloud
       - key: AI_QBANK_MODEL
         value: gpt-oss:120b-cloud
       - key: AI_MINDMAP_MODEL
-        value: gpt-oss:120b
+        value: gpt-oss:120b-cloud
       # OpenAI-compatible base URL for image generation client
       - key: AI_INTEGRATIONS_OPENAI_BASE_URL
         value: https://ollama.com/v1

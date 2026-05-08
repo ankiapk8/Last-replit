@@ -88,7 +88,7 @@ async function getAIClient() {
     ? (process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1")
     : process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
   console.log(`[AI] Provider: ${provider}, BaseURL: ${baseURL}`);
-  console.log(`[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b-cloud"}"`);
+  console.log(`[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash-cloud"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b-cloud"}"`);
   console.log(`[AI] Fallback: ${FALLBACK_MODEL}, Fallback available: ${getFallbackOpenAI() !== null}`);
 
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
