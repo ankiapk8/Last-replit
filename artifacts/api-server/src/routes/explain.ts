@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { createRateLimiter } from "../lib/rate-limiter";
 import { EXPLAIN_MODEL } from "../lib/models";
+import { generationCache, ResponseCache } from "../lib/response-cache";
 
 const router: IRouter = Router();
 
@@ -300,5 +301,164 @@ router.post("/explain", async (req, res): Promise<void> => {
     }
   }
 });
+
+// ─── POST /api/explain/batch ──────────────────────────────────────────────────
+// Batch explanation: explain multiple cards in a SINGLE AI call instead of N calls
+
+router.post("/explain/batch", async (req, res): Promise<void> => {
+  const ip = req.ip ?? "unknown";
+  if (!explainRateLimiter(ip)) {
+    res.status(429).json({ error: "Too many requests. Please wait a moment before trying again." });
+    return;
+  }
+
+  const { cards, mode = "brief" } = req.body as {
+    cards?: Array<{ front: string; back: string }>;
+    mode?: ExplainMode;
+  };
+
+  if (!Array.isArray(cards) || cards.length === 0) {
+    res.status(400).json({ error: "cards must be a non-empty array." });
+    return;
+  }
+
+  // Limit batch size to avoid context overflow
+  const MAX_BATCH = 20;
+  const batch = cards.slice(0, MAX_BATCH);
+
+  const validModes: ExplainMode[] = ["full", "revision", "osce", "brief", "mnemonic", "clinical"];
+  const resolvedMode: ExplainMode = validModes.includes(mode as ExplainMode)
+    ? (mode as ExplainMode)
+    : "brief";
+
+  // Build a single prompt that explains all cards
+  const cardsList = batch.map((c, i) => `Card ${i + 1}:\nQ: ${c.front}\nA: ${c.back}`).join("\n\n");
+
+  const system = `You are a concise medical educator. Below are ${batch.length} flashcards.
+For each card, provide a brief explanation in this exact format:
+
+## Card 1: [Question]
+[2-3 sentence explanation of the key concept]
+
+## Card 2: [Question]
+[2-3 sentence explanation]
+
+... and so on for all ${batch.length} cards.
+
+RULES:
+- Keep each explanation to 2-3 sentences
+- Focus on the key clinical fact or mechanism
+- Use **bold** for key terms
+- Number each response to match the card number`;
+
+  const user = `Provide brief explanations for these ${batch.length} flashcards:\n\n${cardsList}`;
+
+  // Check cache
+  const cacheKey = ResponseCache.hash(`batch-explain:${EXPLAIN_MODEL}:${system}:${user}`);
+  const cached = generationCache.get(cacheKey);
+  if (cached) {
+    console.log(`[explain-batch] Cache hit for ${batch.length} cards`);
+    const explanations = parseBatchExplanations(cached, batch.length);
+    res.json({ explanations });
+    return;
+  }
+
+  let clients;
+  try {
+    clients = await getOpenAIClient();
+  } catch (err) {
+    res.status(503).json({ error: err instanceof Error ? err.message : "AI not configured." });
+    return;
+  }
+  const { openai, getFallbackOpenAI, FALLBACK_MODEL } = clients;
+
+  try {
+    let completion;
+    try {
+      console.log(`[explain-batch] Calling model="${EXPLAIN_MODEL}" for ${batch.length} cards`);
+      completion = await openai.chat.completions.create({
+        model: EXPLAIN_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        max_tokens: Math.min(8000, batch.length * 400),
+        temperature: 0.3,
+      });
+    } catch (primaryErr) {
+      const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
+      if (fb) {
+        console.log(`[explain-batch] Falling back to backup model`);
+        completion = await fb.chat.completions.create({
+          model: FALLBACK_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          max_tokens: Math.min(8000, batch.length * 400),
+          temperature: 0.3,
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
+
+    const raw =
+      (completion as { choices: Array<{ message?: { content?: string } }> }).choices[0]?.message
+        ?.content ?? "";
+    const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    generationCache.set(cacheKey, stripped);
+
+    const explanations = parseBatchExplanations(stripped, batch.length);
+    console.log(`[explain-batch] Parsed ${explanations.length} explanations`);
+    res.json({ explanations });
+  } catch (err) {
+    req.log.error({ err }, "Batch explanation failed");
+    const message = err instanceof Error ? err.message : "Batch explanation failed.";
+    res.status(503).json({ error: `Batch explanation failed: ${message}` });
+  }
+});
+
+/** Parse batch explanation response into individual explanations */
+function parseBatchExplanations(raw: string, expectedCount: number): string[] {
+  const explanations: string[] = [];
+
+  // Try splitting by "## Card N:" pattern
+  const cardPattern = /^##\s*Card\s*\d+:/gm;
+  const parts = raw.split(cardPattern).filter((p) => p.trim());
+
+  if (parts.length >= expectedCount) {
+    for (let i = 0; i < expectedCount; i++) {
+      explanations.push(parts[i].trim());
+    }
+    return explanations;
+  }
+
+  // Fallback: try splitting by "Card N:" without ##
+  const altPattern = /^Card\s*\d+:/gm;
+  const altParts = raw.split(altPattern).filter((p) => p.trim());
+  if (altParts.length >= expectedCount) {
+    for (let i = 0; i < expectedCount; i++) {
+      explanations.push(altParts[i].trim());
+    }
+    return explanations;
+  }
+
+  // Fallback: split evenly by double newlines
+  const chunks = raw.split(/\n\n+/).filter((c) => c.trim());
+  if (chunks.length >= expectedCount) {
+    const chunkSize = Math.floor(chunks.length / expectedCount);
+    for (let i = 0; i < expectedCount; i++) {
+      const start = i * chunkSize;
+      const end = i === expectedCount - 1 ? chunks.length : (i + 1) * chunkSize;
+      explanations.push(chunks.slice(start, end).join("\n\n").trim());
+    }
+    return explanations;
+  }
+
+  // Last resort: return the whole text as a single explanation
+  explanations.push(raw.trim());
+  return explanations;
+}
 
 export default router;

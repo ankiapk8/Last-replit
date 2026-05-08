@@ -297,6 +297,42 @@ function StudyMode({ cards, deckId, deckName, deckKind, onExit, savePoint, srsMo
   const [historyIdx, setHistoryIdx] = useState<number | null>(null); // null = live, 0-4 = past entry
 
   // Last-used mode (persisted per deck)
+
+  // ── Batch explanation cache ─────────────────────────────────────────────────
+  // Pre-fetch brief explanations for all cards in a single batch call
+  const [batchExplanations, setBatchExplanations] = useState<Map<number, string>>(new Map());
+  const batchFetchedRef = useRef(false);
+  useEffect(() => {
+    if (deck.length === 0 || batchFetchedRef.current) return;
+    batchFetchedRef.current = true;
+
+    // Fetch brief explanations for all cards in one batch call
+    const controller = new AbortController();
+    fetch(apiUrl("api/explain/batch"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cards: deck.map((c) => ({ front: c.front, back: c.back })),
+        mode: "brief",
+      }),
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((data: { explanations?: string[] }) => {
+        if (Array.isArray(data.explanations)) {
+          const map = new Map<number, string>();
+          data.explanations.forEach((exp: string, i: number) => {
+            if (deck[i]) map.set(deck[i].id, exp);
+          });
+          setBatchExplanations(map);
+        }
+      })
+      .catch(() => {
+        // Silently fail — batch explanations are optional
+      });
+
+    return () => controller.abort();
+  }, [deck]);
   const [lastMode, setLastMode] = useState<ExplainMode | null>(
     () => localStorage.getItem(`ankigen-last-mode-${deckId}`) as ExplainMode | null
   );

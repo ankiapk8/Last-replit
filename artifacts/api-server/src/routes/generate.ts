@@ -9,6 +9,24 @@ const router: IRouter = Router();
 
 const generateRateLimiter = createRateLimiter(10, 60_000);
 
+// ─── Context limit guard ──────────────────────────────────────────────────────
+// ~90K chars ≈ ~30K tokens with safety margin for most models.
+// For PDFs exceeding this, we sample beginning/middle/end to stay within limits.
+const MAX_CONTEXT_CHARS = 90_000;
+
+function prepareText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_CONTEXT_CHARS) return { text, truncated: false };
+  // Sample: first 30%, middle 30%, last 40% — captures intro, key content, conclusion
+  const firstLen = Math.floor(MAX_CONTEXT_CHARS * 0.3);
+  const midLen = Math.floor(MAX_CONTEXT_CHARS * 0.3);
+  const lastLen = Math.floor(MAX_CONTEXT_CHARS * 0.4);
+  const midStart = Math.floor(text.length / 2) - Math.floor(midLen / 2);
+  return {
+    text: `[BEGINNING]\n${text.slice(0, firstLen)}\n\n[MIDDLE]\n${text.slice(midStart, midStart + midLen)}\n\n[END]\n${text.slice(-lastLen)}`,
+    truncated: true,
+  };
+}
+
 // ─── SSE helpers ─────────────────────────────────────────────────────────────
 
 function setupSSEHeaders(res: Response): void {
@@ -40,29 +58,6 @@ function startHeartbeat(res: Response, intervalMs = 15000): ReturnType<typeof se
 function isDailyLimitError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   return msg.includes("free-models-per-day");
-}
-
-// ─── Text chunking ────────────────────────────────────────────────────────────
-
-const CHUNK_SIZE = 6000;
-const CHUNK_OVERLAP = 300;
-
-function splitIntoChunks(text: string): string[] {
-  if (text.length <= CHUNK_SIZE) return [text.trim()].filter(Boolean);
-  const chunks: string[] = [];
-  let pos = 0;
-  while (pos < text.length) {
-    let end = Math.min(pos + CHUNK_SIZE, text.length);
-    if (end < text.length) {
-      const ws = text.lastIndexOf(" ", end);
-      if (ws > pos + CHUNK_SIZE / 2) end = ws;
-    }
-    const chunk = text.slice(pos, end).trim();
-    if (chunk.length > 50) chunks.push(chunk);
-    pos = end - CHUNK_OVERLAP;
-    if (pos >= text.length) break;
-  }
-  return chunks;
 }
 
 // ─── AI client ────────────────────────────────────────────────────────────────
@@ -128,43 +123,55 @@ interface ImageRegion {
   height: number;
 }
 
-// ─── Prompt builders ──────────────────────────────────────────────────────────
+// ─── Unified prompt builders (single call per PDF) ────────────────────────────
 
-function buildTextCardPrompt(
-  chunk: string,
+function buildUnifiedCardPrompt(
+  fullText: string,
   targetCount: number,
   customPrompt?: string
 ): { system: string; user: string } {
   const custom = customPrompt?.trim()
     ? `\n\nAdditional instructions from user: ${customPrompt.trim()}`
     : "";
+  const mcqCount = Math.max(1, Math.ceil(targetCount / 4));
   return {
     system: `You are an expert medical educator and Anki flashcard creator.${custom}
 
-Return ONLY a valid JSON array — no markdown fences, no explanation:
-[
-  {
-    "front": "Concise question or term (max 200 chars)",
-    "back": "Answer with key details (max 500 chars)",
-    "tags": "optional,comma,tags",
-    "cardType": "basic",
-    "pageNumber": null
-  }
-]
+Return ONLY a valid JSON object — no markdown fences, no explanation:
+{
+  "cards": [
+    {
+      "front": "Concise question or term (max 200 chars)",
+      "back": "Answer with key details (max 500 chars)",
+      "tags": "optional,comma,tags",
+      "cardType": "basic"
+    }
+  ],
+  "mcqs": [
+    {
+      "front": "Clinical vignette or direct question",
+      "back": "Explanation of correct answer and why distractors are wrong",
+      "choices": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "tags": "optional,tags"
+    }
+  ]
+}
 
 RULES:
-- Generate exactly ${targetCount} cards (or fewer if content is insufficient)
-- Each card must cover one atomic fact, mechanism, or concept
-- cardType: "basic" for most; "mcq" for multiple-choice
-- For MCQ add: "choices": ["A","B","C","D"], "correctIndex": 0 (0-based)
+- Generate exactly ${targetCount} flashcards in the "cards" array
+- Generate exactly ${mcqCount} MCQs in the "mcqs" array
+- Each card/MCQ must cover one atomic fact, mechanism, or concept
+- Distribute cards across the ENTIRE source material — don't cluster on one section
+- MCQs must be USMLE/professional exam style with clinical vignettes
 - Focus on high-yield clinical facts, mechanisms, definitions, and exam pearls
-- Do not repeat the same concept in multiple cards`,
-    user: `Generate ${targetCount} high-yield flashcards from this text:\n\n${chunk}`,
+- Do not repeat the same concept across cards`,
+    user: `Generate ${targetCount} flashcards and ${mcqCount} MCQs from this medical text:\n\n${fullText}`,
   };
 }
 
-function buildQBankPrompt(
-  chunk: string,
+function buildUnifiedQBankPrompt(
+  fullText: string,
   targetCount: number,
   customPrompt?: string
 ): { system: string; user: string } {
@@ -179,8 +186,7 @@ Return ONLY a valid JSON array — no markdown fences, no explanation:
     "back": "Explanation of correct answer and why distractors are wrong",
     "choices": ["Option A", "Option B", "Option C", "Option D"],
     "correctIndex": 0,
-    "tags": "optional,tags",
-    "pageNumber": null
+    "tags": "optional,tags"
   }
 ]
 
@@ -190,13 +196,15 @@ RULES:
 - back: thorough explanation of the correct AND incorrect answers
 - choices: exactly 4 options with plausible distractors
 - correctIndex: 0-based index of the correct answer
-- USMLE/professional exam style`,
-    user: `Generate ${targetCount} MCQs from this text:\n\n${chunk}`,
+- USMLE/professional exam style
+- Distribute MCQs across the ENTIRE source material — don't cluster on one section`,
+    user: `Generate ${targetCount} MCQs from this medical text:\n\n${fullText}`,
   };
 }
 
 // ─── Parse AI JSON response ───────────────────────────────────────────────────
 
+/** Parse cards from the old flat array format (for backwards compat) */
 function parseCardsFromAI(raw: string, pageNumber?: number | null): RawCard[] {
   try {
     const match = raw.match(/\[[\s\S]*\]/);
@@ -227,151 +235,136 @@ function parseCardsFromAI(raw: string, pageNumber?: number | null): RawCard[] {
   }
 }
 
-// ─── Concurrency helper ────────────────────────────────────────────────────────
-
-async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
-  const results: T[] = new Array(tasks.length);
-  let idx = 0;
-  async function worker() {
-    while (idx < tasks.length) {
-      const i = idx++;
-      results[i] = await tasks[i]();
+/** Parse cards from the new unified { cards, mcqs } format */
+function parseUnifiedCardsFromAI(raw: string): RawCard[] {
+  try {
+    // Try unified format first: { "cards": [...], "mcqs": [...] }
+    const objMatch = raw.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      const parsed = JSON.parse(objMatch[0]);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const result: RawCard[] = [];
+        if (Array.isArray(parsed.cards)) {
+          for (const c of parsed.cards) {
+            const front = String(c.front ?? "").trim();
+            const back = String(c.back ?? "").trim();
+            if (!front || !back) continue;
+            const card: RawCard = { front, back, cardType: "basic" };
+            if (typeof c.tags === "string" && c.tags) card.tags = c.tags;
+            result.push(card);
+          }
+        }
+        if (Array.isArray(parsed.mcqs)) {
+          for (const c of parsed.mcqs) {
+            const front = String(c.front ?? "").trim();
+            const back = String(c.back ?? "").trim();
+            if (!front || !back) continue;
+            const card: RawCard = { front, back, cardType: "mcq" };
+            if (typeof c.tags === "string" && c.tags) card.tags = c.tags;
+            if (Array.isArray(c.choices)) card.choices = c.choices.map(String);
+            if (typeof c.correctIndex === "number") card.correctIndex = c.correctIndex;
+            result.push(card);
+          }
+        }
+        if (result.length > 0) return result;
+      }
     }
+    // Fallback to flat array format
+    return parseCardsFromAI(raw);
+  } catch {
+    return [];
   }
-  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
-  return results;
 }
 
-// ─── Text card generation ─────────────────────────────────────────────────────
+// ─── Unified text card generation (SINGLE AI call) ────────────────────────────
 
-async function generateTextCards(
+async function generateTextCardsUnified(
   openai: Awaited<ReturnType<typeof getAIClient>>["openai"],
   getFallbackOpenAI: Awaited<ReturnType<typeof getAIClient>>["getFallbackOpenAI"],
   FALLBACK_MODEL: string,
   text: string,
   totalTarget: number,
-  pageTexts: string[],
   customPrompt: string | undefined,
-  onProgress: (pct: number, msg: string, count: number) => void,
-  onPartialCards?: (cards: RawCard[]) => void
+  onProgress: (pct: number, msg: string, count: number, stage?: string) => void
 ): Promise<RawCard[]> {
-  const sourceChunks: { text: string; pageNumber: number | null }[] = [];
+  const { text: preparedText, truncated } = prepareText(text);
+  if (truncated) {
+    console.log(
+      `[generate] Text truncated from ${text.length} to ${preparedText.length} chars for context limit`
+    );
+  }
 
-  if (pageTexts.length > 0) {
-    pageTexts.forEach((pt, i) => {
-      if (pt.trim().length > 50) {
-        sourceChunks.push({ text: pt, pageNumber: i + 1 });
-      }
+  const { system, user } = buildUnifiedCardPrompt(preparedText, totalTarget, customPrompt);
+
+  // Check cache first
+  const cacheKey = ResponseCache.hash(`${FREE_TEXT_MODEL}:${system}:${user}`);
+  const cached = generationCache.get(cacheKey);
+  if (cached) {
+    console.log(`[generate] Unified text generation: cache hit`);
+    onProgress(50, "Generating cards…", 0, "generating");
+    const cards = parseUnifiedCardsFromAI(cached);
+    onProgress(85, `Generated ${cards.length} cards`, cards.length, "generating");
+    return cards.slice(0, totalTarget * 2);
+  }
+
+  onProgress(10, "Generating all cards from your document…", 0, "generating");
+
+  let completion;
+  try {
+    console.log(
+      `[generate] Unified text generation: calling model="${FREE_TEXT_MODEL}" with ~${preparedText.length} chars`
+    );
+    completion = await openai.chat.completions.create({
+      model: FREE_TEXT_MODEL,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      max_tokens: 8000,
+      temperature: 0.3,
     });
-  }
-  if (sourceChunks.length === 0) {
-    splitIntoChunks(text).forEach((c) => sourceChunks.push({ text: c, pageNumber: null }));
-  }
-
-  const cardsPerChunk = Math.max(1, Math.ceil(totalTarget / sourceChunks.length));
-  const allCards: RawCard[] = [];
-  let completedCount = 0;
-
-  const tasks = sourceChunks.map((chunk, i) => async (): Promise<RawCard[]> => {
-    const label = chunk.pageNumber != null ? `page ${chunk.pageNumber}` : `section ${i + 1}`;
-    const { system, user } = buildTextCardPrompt(chunk.text, cardsPerChunk, customPrompt);
-
-    // Check cache first
-    const textCacheKey = ResponseCache.hash(`${FREE_TEXT_MODEL}:${system}:${user}`);
-    const textCached = generationCache.get(textCacheKey);
-    if (textCached) {
-      console.log(`[generate] Text chunk ${i + 1}: cache hit`);
-      const raw = textCached;
-      const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-      const cards = parseCardsFromAI(stripped, chunk.pageNumber);
-      completedCount++;
-      const pct = Math.round((completedCount / sourceChunks.length) * 85);
-      allCards.push(...cards);
-      onProgress(pct, `Generated cards from ${label} (${completedCount}/${sourceChunks.length})…`, allCards.length);
-      onPartialCards?.(cards);
-      return cards;
-    }
-
-    let completion;
-    try {
+    console.log(
+      `[generate] Unified text generation: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+    );
+    const rawContent = completion.choices[0]?.message?.content ?? "";
+    generationCache.set(cacheKey, rawContent);
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    console.error(
+      `[generate] Unified text generation: PRIMARY model error (status=${status}):`,
+      err instanceof Error ? err.message : err
+    );
+    const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+    if (fb) {
       console.log(
-        `[generate] Text chunk ${i + 1}/${sourceChunks.length}: calling model="${FREE_TEXT_MODEL}"`
+        `[generate] Unified text generation: attempting fallback model="${FALLBACK_MODEL}"`
       );
-      completion = await openai.chat.completions.create({
-        model: FREE_TEXT_MODEL,
+      completion = await fb.chat.completions.create({
+        model: FALLBACK_MODEL,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        max_tokens: 4000,
+        max_tokens: 8000,
         temperature: 0.3,
       });
-      console.log(
-        `[generate] Text chunk ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
-      );
-      // Cache the raw response
-      const rawContent = completion.choices[0]?.message?.content ?? "";
-      generationCache.set(textCacheKey, rawContent);
-    } catch (err) {
-      const status = (err as { status?: number }).status;
-      console.error(
-        `[generate] Text chunk ${i + 1}: PRIMARY model error (status=${status}):`,
-        err instanceof Error ? err.message : err
-      );
-      const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
-      if (fb) {
-        console.log(
-          `[generate] Text chunk ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`
-        );
-        completion = await fb.chat.completions.create({
-          model: FALLBACK_MODEL,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          max_tokens: 4000,
-          temperature: 0.3,
-        });
-      } else {
-        throw err;
-      }
+    } else {
+      throw err;
     }
-
-    const raw = completion.choices[0]?.message?.content ?? "";
-    const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-    const cards = parseCardsFromAI(stripped, chunk.pageNumber);
-    console.log(`[generate] Text chunk ${i + 1}: parsed ${cards.length} cards`);
-
-    completedCount++;
-    const pct = Math.round((completedCount / sourceChunks.length) * 85);
-    allCards.push(...cards);
-    onProgress(
-      pct,
-      `Generated cards from ${label} (${completedCount}/${sourceChunks.length})…`,
-      allCards.length
-    );
-    onPartialCards?.(cards);
-
-    return cards;
-  });
-
-  try {
-    await runWithConcurrency(tasks, 4);
-  } catch (err) {
-    const status = (err as { status?: number }).status;
-    if (status === 401 || status === 403) throw err;
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/user not found|invalid.*key|unauthorized/i.test(msg)) throw err;
-    console.error(`[generate] Chunk failed:`, err instanceof Error ? err.message : err);
-    throw err;
   }
 
-  return allCards.slice(0, totalTarget * 2);
+  const raw = completion.choices[0]?.message?.content ?? "";
+  const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const cards = parseUnifiedCardsFromAI(stripped);
+  console.log(`[generate] Unified text generation: parsed ${cards.length} cards`);
+
+  onProgress(85, `Generated ${cards.length} cards`, cards.length, "generating");
+  return cards.slice(0, totalTarget * 2);
 }
 
-// ─── Visual card generation ───────────────────────────────────────────────────
+// ─── Unified visual card generation (SINGLE AI call for all pages) ────────────
 
-async function generateVisualCards(
+async function generateVisualCardsUnified(
   openai: Awaited<ReturnType<typeof getAIClient>>["openai"],
   getFallbackOpenAI: Awaited<ReturnType<typeof getAIClient>>["getFallbackOpenAI"],
   FALLBACK_MODEL: string,
@@ -379,135 +372,128 @@ async function generateVisualCards(
   _pageImageRegions: ImageRegion[][],
   visualCardCount: number,
   customPrompt: string | undefined,
-  onProgress: (pct: number, msg: string, count: number) => void
+  onProgress: (pct: number, msg: string, count: number, stage?: string) => void
 ): Promise<StagedCard[]> {
   if (pageImages.length === 0) return [];
 
-  const allCards: StagedCard[] = [];
-  const maxPerPage = Math.max(1, Math.ceil(visualCardCount / pageImages.length));
-  let completedVisual = 0;
-
-  const tasks = pageImages.map((base64, i) => async (): Promise<void> => {
-    if (!base64 || base64.length < 100) return;
-
-    const custom = customPrompt?.trim()
-      ? `\n\nAdditional instructions: ${customPrompt.trim()}`
-      : "";
-    const system = `You are a medical visual flashcard expert. Identify distinct visual elements (diagrams, charts, tables, anatomical illustrations, flowcharts, graphs) in this page image.${custom}
+  const custom = customPrompt?.trim() ? `\n\nAdditional instructions: ${customPrompt.trim()}` : "";
+  const system = `You are a medical visual flashcard expert. Review ALL page images and identify distinct visual elements (diagrams, charts, tables, anatomical illustrations, flowcharts, graphs).${custom}
 
 For each visual element return a card with:
 - "front": Clinical or educational question about the figure
 - "back": Detailed answer with key teaching points
 - "bbox": [x, y, width, height] normalised 0-1, tight around the figure. Max 0.7 × 0.7.
-- "pageNumber": ${i + 1}
+- "pageNumber": <1-based page number>
 
-Return ONLY valid JSON array (no markdown, no explanation):
-[{"front":"...","back":"...","bbox":[x,y,w,h],"pageNumber":${i + 1}}]
+Return ONLY a valid JSON array (no markdown, no explanation):
+[{"front":"...","back":"...","bbox":[x,y,w,h],"pageNumber":N}]
 
-Maximum ${maxPerPage} cards. Skip pages that are pure text.`;
+Rules:
+- Maximum 2 cards per page (only for pages with actual visual content)
+- Skip pages that are pure text
+- Total cards should not exceed ${visualCardCount}`;
 
+  onProgress(70, "Analysing all pages for visual elements…", 0, "visual");
+
+  // Build a single multimodal message with ALL page images
+  const content = [
+    { type: "text" as const, text: system },
+    ...pageImages
+      .filter((b) => b && b.length >= 100)
+      .map((base64) => {
+        const dataUrl = base64.startsWith("data:") ? base64 : `data:image/jpeg;base64,${base64}`;
+        return { type: "image_url" as const, image_url: { url: dataUrl, detail: "low" as const } };
+      }),
+  ];
+
+  if (content.length <= 1) {
+    // No valid images
+    return [];
+  }
+
+  try {
+    let completion;
     try {
-      const dataUrl = base64.startsWith("data:") ? base64 : `data:image/jpeg;base64,${base64}`;
-      let completion;
-      try {
-        console.log(
-          `[generate] Visual page ${i + 1}/${pageImages.length}: calling model="${VISUAL_DETECTION_MODEL}"`
-        );
-        completion = await openai.chat.completions.create({
-          model: VISUAL_DETECTION_MODEL,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: system },
-                { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
-              ],
-            },
-          ],
-          max_tokens: 1024,
-          temperature: 0.2,
-        });
-        console.log(
-          `[generate] Visual page ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
-        );
-      } catch (err) {
-        const status = (err as { status?: number }).status;
-        console.error(
-          `[generate] Visual page ${i + 1}: PRIMARY model error (status=${status}):`,
-          err instanceof Error ? err.message : err
-        );
-        const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
-        if (fb) {
-          console.log(
-            `[generate] Visual page ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`
-          );
-          completion = await fb.chat.completions.create({
-            model: FALLBACK_MODEL,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: system },
-                  { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
-                ],
-              },
-            ],
-            max_tokens: 1024,
-            temperature: 0.2,
-          });
-        } else {
-          throw err;
-        }
-      }
-
-      const rawText = completion.choices[0]?.message?.content ?? "";
-      const match = rawText.match(/\[[\s\S]*\]/);
-      if (!match) {
-        console.log(`[generate] Visual page ${i + 1}: no JSON array found in response`);
-        return;
-      }
-
-      const parsed = JSON.parse(match[0]) as Array<{
-        front?: string;
-        back?: string;
-        bbox?: number[];
-        pageNumber?: number;
-      }>;
-
-      for (const item of parsed) {
-        if (!item.front?.trim() || !item.back?.trim()) continue;
-        const bbox = Array.isArray(item.bbox) && item.bbox.length === 4 ? item.bbox : null;
-        if (bbox && (bbox[2] > 0.7 || bbox[3] > 0.7)) continue;
-
-        const card: StagedCard = {
-          front: String(item.front).trim(),
-          back: String(item.back).trim(),
-          cardType: "basic",
-          pageNumber: i + 1,
-          sourceImage: dataUrl,
-        };
-        if (bbox) card.bbox = JSON.stringify(bbox);
-        allCards.push(card);
-      }
+      console.log(
+        `[generate] Unified visual generation: calling model="${VISUAL_DETECTION_MODEL}" with ${content.length - 1} images`
+      );
+      completion = await openai.chat.completions.create({
+        model: VISUAL_DETECTION_MODEL,
+        messages: [{ role: "user", content }],
+        max_tokens: 4000,
+        temperature: 0.2,
+      });
+      console.log(
+        `[generate] Unified visual generation: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+      );
     } catch (err) {
+      const status = (err as { status?: number }).status;
       console.error(
-        `[generate] Visual page ${i + 1} failed:`,
+        `[generate] Unified visual generation: PRIMARY model error (status=${status}):`,
         err instanceof Error ? err.message : err
       );
+      const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+      if (fb) {
+        console.log(
+          `[generate] Unified visual generation: attempting fallback model="${FALLBACK_MODEL}"`
+        );
+        completion = await fb.chat.completions.create({
+          model: FALLBACK_MODEL,
+          messages: [{ role: "user", content }],
+          max_tokens: 4000,
+          temperature: 0.2,
+        });
+      } else {
+        throw err;
+      }
     }
 
-    completedVisual++;
-    const pct = 20 + Math.round((completedVisual / pageImages.length) * 60);
-    onProgress(
-      pct,
-      `Analysing page ${i + 1} of ${pageImages.length} for visual elements…`,
-      allCards.length
+    const rawText = completion.choices[0]?.message?.content ?? "";
+    const match = rawText.match(/\[[\s\S]*\]/);
+    if (!match) {
+      console.log(`[generate] Unified visual generation: no JSON array found in response`);
+      onProgress(95, "No visual elements found", 0, "visual");
+      return [];
+    }
+
+    const parsed = JSON.parse(match[0]) as Array<{
+      front?: string;
+      back?: string;
+      bbox?: number[];
+      pageNumber?: number;
+    }>;
+
+    const allCards: StagedCard[] = [];
+    for (const item of parsed) {
+      if (!item.front?.trim() || !item.back?.trim()) continue;
+      const bbox = Array.isArray(item.bbox) && item.bbox.length === 4 ? item.bbox : null;
+      if (bbox && (bbox[2] > 0.7 || bbox[3] > 0.7)) continue;
+
+      const pageIdx = (item.pageNumber ?? 1) - 1;
+      const base64 = pageImages[pageIdx];
+      const dataUrl = base64?.startsWith("data:") ? base64 : `data:image/jpeg;base64,${base64}`;
+
+      const card: StagedCard = {
+        front: String(item.front).trim(),
+        back: String(item.back).trim(),
+        cardType: "basic",
+        pageNumber: item.pageNumber ?? 1,
+        sourceImage: dataUrl,
+      };
+      if (bbox) card.bbox = JSON.stringify(bbox);
+      allCards.push(card);
+    }
+
+    onProgress(95, `Found ${allCards.length} visual cards`, allCards.length, "visual");
+    return allCards.slice(0, visualCardCount);
+  } catch (err) {
+    console.error(
+      `[generate] Unified visual generation failed:`,
+      err instanceof Error ? err.message : err
     );
-  });
-
-  await runWithConcurrency(tasks, 2);
-
-  return allCards.slice(0, visualCardCount);
+    onProgress(95, "Visual analysis failed, continuing…", 0, "visual");
+    return [];
+  }
 }
 
 // ─── Save deck + cards to DB ──────────────────────────────────────────────────
@@ -615,33 +601,24 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
 
     const allCards: StagedCard[] = [];
 
-    // Text card generation (parallel chunks)
+    // Text card generation (SINGLE AI call for all cards)
     if ((deckType === "text" || deckType === "both") && text.trim()) {
-      sendProgress(0, "Starting text card generation…", 0, "generating");
-      const onTextProgress = (pct: number, msg: string, count: number) =>
-        sendProgress(Math.round(pct * 0.7), msg, count, "generating");
-      const onPartialCards = (cards: RawCard[]) => {
-        sendSSE(res, { type: "partial_cards", cards, stage: "generating" });
-      };
-      const textCards = await generateTextCards(
+      const textCards = await generateTextCardsUnified(
         openai,
         getFallbackOpenAI,
         FALLBACK_MODEL,
         text,
         targetCards,
-        pageTexts,
         customPrompt,
-        onTextProgress,
-        onPartialCards
+        sendProgress
       );
       allCards.push(...textCards);
       sendProgress(70, `Generated ${textCards.length} text cards`, allCards.length, "saving");
     }
 
-    // Visual card generation (parallel pages)
+    // Visual card generation (SINGLE AI call for all pages)
     if ((deckType === "visual" || deckType === "both") && pageImages.length > 0) {
-      sendProgress(70, "Analysing pages for visual elements…", allCards.length, "visual");
-      const visualCards = await generateVisualCards(
+      const visualCards = await generateVisualCardsUnified(
         openai,
         getFallbackOpenAI,
         FALLBACK_MODEL,
@@ -649,8 +626,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
         pageImageRegions,
         targetVisual,
         customPrompt,
-        (pct: number, msg: string, count: number) =>
-          sendProgress(70 + Math.round(pct * 0.25), msg, allCards.length + count, "visual")
+        sendProgress
       );
       allCards.push(...visualCards);
       sendProgress(95, `Found ${visualCards.length} visual cards`, allCards.length, "saving");
@@ -786,31 +762,31 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
 
   try {
     const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getAIClient();
-    const chunks = splitIntoChunks(text);
-    const questionsPerChunk = Math.max(1, Math.ceil(targetQuestions / chunks.length));
-    const allQuestions: RawCard[] = [];
-    let qbankCompleted = 0;
+    const { text: preparedText, truncated } = prepareText(text);
+    if (truncated) {
+      console.log(
+        `[generate-qbank] Text truncated from ${text.length} to ${preparedText.length} chars`
+      );
+    }
 
-    const tasks = chunks.map((chunk, i) => async (): Promise<void> => {
-      const { system, user } = buildQBankPrompt(chunk, questionsPerChunk, customPrompt);
+    const { system, user } = buildUnifiedQBankPrompt(preparedText, targetQuestions, customPrompt);
 
-      // Check cache first
-      const qbankCacheKey = ResponseCache.hash(`${QBANK_MODEL}:${system}:${user}`);
-      const qbankCached = generationCache.get(qbankCacheKey);
-      if (qbankCached) {
-        console.log(`[generate-qbank] Chunk ${i + 1}: cache hit`);
-        const parsed = parseCardsFromAI(qbankCached, null);
-        allQuestions.push(...parsed);
-        qbankCompleted++;
-        const pct = Math.round((qbankCompleted / chunks.length) * 85);
-        sendProgress(pct, `Generated questions from section ${i + 1} of ${chunks.length}…`);
-        return;
-      }
+    // Check cache first
+    const qbankCacheKey = ResponseCache.hash(`${QBANK_MODEL}:${system}:${user}`);
+    const qbankCached = generationCache.get(qbankCacheKey);
+    let allQuestions: RawCard[];
+
+    if (qbankCached) {
+      console.log(`[generate-qbank] Cache hit`);
+      sendProgress(30, "Generating questions…");
+      allQuestions = parseCardsFromAI(qbankCached, null);
+    } else {
+      sendProgress(10, "Generating all questions from your document…");
 
       let completion;
       try {
         console.log(
-          `[generate-qbank] Chunk ${i + 1}/${chunks.length}: calling model="${QBANK_MODEL}"`
+          `[generate-qbank] Calling model="${QBANK_MODEL}" with ~${preparedText.length} chars`
         );
         completion = await openai.chat.completions.create({
           model: QBANK_MODEL,
@@ -818,51 +794,44 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
             { role: "system", content: system },
             { role: "user", content: user },
           ],
-          max_tokens: 4000,
+          max_tokens: 8000,
           temperature: 0.3,
         });
         console.log(
-          `[generate-qbank] Chunk ${i + 1}: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+          `[generate-qbank] Response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
         );
+        const rawContent = completion.choices[0]?.message?.content ?? "";
+        generationCache.set(qbankCacheKey, rawContent);
       } catch (err) {
         const status = (err as { status?: number }).status;
         console.error(
-          `[generate-qbank] Chunk ${i + 1}: PRIMARY model error (status=${status}):`,
+          `[generate-qbank] PRIMARY model error (status=${status}):`,
           err instanceof Error ? err.message : err
         );
         const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
         if (fb) {
-          console.log(
-            `[generate-qbank] Chunk ${i + 1}: attempting fallback model="${FALLBACK_MODEL}"`
-          );
+          console.log(`[generate-qbank] Attempting fallback model="${FALLBACK_MODEL}"`);
           completion = await fb.chat.completions.create({
             model: FALLBACK_MODEL,
             messages: [
               { role: "system", content: system },
               { role: "user", content: user },
             ],
-            max_tokens: 4000,
+            max_tokens: 8000,
             temperature: 0.3,
           });
         } else {
           throw err;
         }
       }
-      const parsed = parseCardsFromAI(completion.choices[0]?.message?.content ?? "", null);
-      console.log(`[generate-qbank] Chunk ${i + 1}: parsed ${parsed.length} questions`);
-      allQuestions.push(...parsed);
 
-      qbankCompleted++;
-      const pct = Math.round((qbankCompleted / chunks.length) * 85);
-      sendProgress(pct, `Generated questions from section ${i + 1} of ${chunks.length}…`);
-    });
-
-    try {
-      await runWithConcurrency(tasks, 3);
-    } catch (err) {
-      console.error(`[generate-qbank] Chunk failed:`, err instanceof Error ? err.message : err);
-      throw err;
+      const raw = completion.choices[0]?.message?.content ?? "";
+      const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+      allQuestions = parseCardsFromAI(stripped, null);
+      console.log(`[generate-qbank] Parsed ${allQuestions.length} questions`);
     }
+
+    sendProgress(85, `Generated ${allQuestions.length} questions`);
 
     sendProgress(90, "Saving question bank…");
 
