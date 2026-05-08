@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
+import { getMonitorSnapshot } from "../lib/monitor";
 import {
   FREE_TEXT_MODEL,
   FREE_VISION_MODEL,
@@ -59,9 +60,6 @@ async function checkAiProvider(): Promise<CheckResult> {
     return { status: "ok" };
   }
 
-  // Env key not visible — try importing the integration client at runtime.
-  // The Replit platform injects AI_INTEGRATIONS_OPENAI_API_KEY into managed
-  // server processes without exposing it through normal env introspection.
   try {
     const { isConfigured } = await import("@workspace/integrations-openai-ai-server");
     if (isConfigured) {
@@ -142,6 +140,17 @@ router.get("/healthz", async (_req, res) => {
     uptimeSeconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * GET /api/monitor — Comprehensive server health dashboard.
+ * Returns memory usage, error log, generation status, request metrics,
+ * AI call stats, cache stats, and overall health status.
+ */
+router.get("/monitor", (_req, res) => {
+  const snapshot = getMonitorSnapshot();
+  const httpStatus = snapshot.status === "healthy" ? 200 : snapshot.status === "degraded" ? 200 : 503;
+  res.status(httpStatus).json(snapshot);
 });
 
 export default router;

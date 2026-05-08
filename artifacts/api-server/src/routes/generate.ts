@@ -5,6 +5,7 @@ import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL, QBANK_MODEL } from "../lib/mod
 import { getEffectiveIsPro, sendLimitError } from "../lib/free-tier-limits";
 import { createRateLimiter } from "../lib/rate-limiter";
 import { generationCache, ResponseCache } from "../lib/response-cache";
+import { startGeneration, completeGeneration, failGeneration, logError, logAiCall } from "../lib/monitor";
 
 // In-memory generation status map for polling fallback
 interface GenerationStatus {
@@ -620,6 +621,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
 
   // Generate a unique ID for this generation (for polling fallback + status tracking)
   const generationId = randomUUID();
+  startGeneration(generationId, "deck");
   const startedAt = Date.now();
 
   setupSSEHeaders(res);
@@ -683,8 +685,8 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
     );
 
     // Track success status in memory for polling fallback
-    generationStatusMap.set(generationId, {
-      status: "completed",
+    completeGeneration(generationId, deckId);
+    generationStatusMap.set(generationId, { status: "completed",
       deckId,
       startedAt,
     });
@@ -715,9 +717,9 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
                   : `Generation failed: ${message}`;
 
     // Track error status in memory for polling fallback
+    failGeneration(generationId, friendly);
     generationStatusMap.set(generationId, {
-      status: "failed",
-      error: friendly,
+      status: "failed", error: friendly,
       startedAt,
     });
 
@@ -792,6 +794,7 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
 
   // Generate a unique ID for this generation (for polling fallback)
   const generationId = randomUUID();
+  startGeneration(generationId, "deck");
   const startedAt = Date.now();
 
   setupSSEHeaders(res);
@@ -914,8 +917,8 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
     });
 
     // Track success status in memory for polling fallback
-    generationStatusMap.set(generationId, {
-      status: "completed",
+    completeGeneration(generationId, qbankId);
+    generationStatusMap.set(generationId, { status: "completed",
       deckId: qbankId,
       startedAt,
     });
@@ -944,9 +947,9 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
                 : `Question bank generation failed: ${message}`;
 
     // Track error status in memory for polling fallback
+    failGeneration(generationId, friendly);
     generationStatusMap.set(generationId, {
-      status: "failed",
-      error: friendly,
+      status: "failed", error: friendly,
       startedAt,
     });
 
