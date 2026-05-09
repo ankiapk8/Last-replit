@@ -4,10 +4,10 @@
 
 AnkiGen is a pnpm monorepo with two main services:
 
-| Service | Path | Default port |
-|---|---|---|
-| **API server** (Express + PostgreSQL) | `artifacts/api-server` | `3001` |
-| **Frontend** (React + Vite) | `artifacts/anki-generator` | `5173` |
+| Service                               | Path                       | Default port |
+| ------------------------------------- | -------------------------- | ------------ |
+| **API server** (Express + PostgreSQL) | `artifacts/api-server`     | `3001`       |
+| **Frontend** (React + Vite)           | `artifacts/anki-generator` | `5000`       |
 
 In development the Vite dev server automatically proxies all `/api/*` requests to the local API server — no CORS configuration needed.
 
@@ -15,12 +15,12 @@ In development the Vite dev server automatically proxies all `/api/*` requests t
 
 ## Prerequisites
 
-| Tool | Version | Install |
-|---|---|---|
-| Node.js | 22 or 24 LTS | https://nodejs.org |
-| pnpm | 10+ | `npm i -g pnpm@latest` |
-| Docker + Compose | any recent | https://docs.docker.com/get-docker/ |
-| Git | any | https://git-scm.com |
+| Tool             | Version      | Install                             |
+| ---------------- | ------------ | ----------------------------------- |
+| Node.js          | 22 or 24 LTS | https://nodejs.org                  |
+| pnpm             | 10+          | `npm i -g pnpm@latest`              |
+| Docker + Compose | any recent   | https://docs.docker.com/get-docker/ |
+| Git              | any          | https://git-scm.com                 |
 
 > **VS Code extensions (recommended):** ESLint, Prettier, Tailwind CSS IntelliSense, Prisma/Drizzle Studio
 
@@ -89,9 +89,9 @@ Open a **second** terminal and run:
 pnpm web:dev
 ```
 
-This starts Vite on port 5173. All `/api/*` requests are proxied to `http://localhost:3001` automatically.
+This starts Vite on port 5000. All `/api/*` requests are proxied to `http://localhost:3001` automatically.
 
-Open **http://localhost:5173** in your browser.
+Open **http://localhost:5000** in your browser.
 
 ### 6. (Optional) Open both in VS Code
 
@@ -101,18 +101,18 @@ Add a `.vscode/tasks.json` to launch both services with one keystroke — see th
 
 ## Environment Variables Reference
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENROUTER_API_KEY` | ✅ | — | AI API key (openrouter.ai) |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | ✅ | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL |
-| `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
-| `PORT` | API only | `3001` | Port for the Express API server |
-| `AI_TEXT_MODEL` | — | `google/gemini-2.0-flash-001` | Override text model |
-| `AI_VISION_MODEL` | — | `google/gemini-2.0-flash-001` | Override vision model |
-| `API_PORT` | Frontend only | `3001` | Port to proxy `/api` calls to in dev |
-| `NODE_ENV` | — | `development` | Set to `production` for prod builds |
-| `STATIC_DIR` | Production | — | Path to pre-built frontend files |
-| `BASE_PATH` | Production | `/` | Base URL path (always `/` on Render) |
+| Variable                          | Required      | Default                        | Description                          |
+| --------------------------------- | ------------- | ------------------------------ | ------------------------------------ |
+| `OPENROUTER_API_KEY`              | ✅            | —                              | AI API key (openrouter.ai)           |
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | ✅            | `https://openrouter.ai/api/v1` | OpenAI-compatible base URL           |
+| `DATABASE_URL`                    | ✅            | —                              | PostgreSQL connection string         |
+| `PORT`                            | API only      | `3001`                         | Port for the Express API server      |
+| `AI_TEXT_MODEL`                   | —             | `google/gemini-2.0-flash-001`  | Override text model                  |
+| `AI_VISION_MODEL`                 | —             | `google/gemini-2.0-flash-001`  | Override vision model                |
+| `API_PORT`                        | Frontend only | `3001`                         | Port to proxy `/api` calls to in dev |
+| `NODE_ENV`                        | —             | `development`                  | Set to `production` for prod builds  |
+| `STATIC_DIR`                      | Production    | —                              | Path to pre-built frontend files     |
+| `BASE_PATH`                       | Production    | `/`                            | Base URL path (always `/` on Render) |
 
 ---
 
@@ -192,10 +192,10 @@ The repository includes a `render.yaml` blueprint that provisions everything aut
 
 ### What `render.yaml` provisions
 
-| Resource | Type | Plan |
-|---|---|---|
-| `anki-generator` | Web service (Docker) | Starter |
-| `anki-generator-db` | PostgreSQL 16 | Basic 256 MB |
+| Resource            | Type                 | Plan         |
+| ------------------- | -------------------- | ------------ |
+| `anki-generator`    | Web service (Docker) | Starter      |
+| `anki-generator-db` | PostgreSQL 16        | Basic 256 MB |
 
 ### First deploy time
 
@@ -207,14 +207,14 @@ Render pings `/api/healthz` every 30 seconds. If it fails 3 times the service is
 
 ### Environment variables on Render
 
-| Variable | Source |
-|---|---|
-| `DATABASE_URL` | Auto-linked from `anki-generator-db` |
-| `PORT` | Set to `8080` in `render.yaml` |
-| `NODE_ENV` | Set to `production` in `render.yaml` |
-| `STATIC_DIR` | Set to `/app/public` in `render.yaml` |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | Set to OpenRouter URL in `render.yaml` |
-| `OPENROUTER_API_KEY` | **You must set this** (marked `sync: false`) |
+| Variable                          | Source                                       |
+| --------------------------------- | -------------------------------------------- |
+| `DATABASE_URL`                    | Auto-linked from `anki-generator-db`         |
+| `PORT`                            | Set to `8080` in `render.yaml`               |
+| `NODE_ENV`                        | Set to `production` in `render.yaml`         |
+| `STATIC_DIR`                      | Set to `/app/public` in `render.yaml`        |
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | Set to OpenRouter URL in `render.yaml`       |
+| `OPENROUTER_API_KEY`              | **You must set this** (marked `sync: false`) |
 
 To add or edit env vars after deploy: Render Dashboard → your web service → **Environment**.
 
@@ -228,7 +228,7 @@ AnkiGen has a built-in dev-only subscription control panel (no Stripe required) 
 
 When running in development (`NODE_ENV=development`), a **Dev Mode** panel appears in the bottom-left corner of the app. It lets you instantly switch between Free and Pro plans:
 
-1. Log in with Replit auth (visit `http://localhost:5173` and click the login link in the header).
+1. Log in with Replit auth (visit `http://localhost:5000` and click the login link in the header).
 2. Open the **Dev Mode** panel in the bottom-left corner.
 3. Click **"Simulate Subscribe"** — this calls `POST /api/dev/simulate-subscribe` and marks your session as Pro without touching Stripe.
 4. The app immediately unlocks all Pro features (visual cards, Q-bank, mind maps, unlimited exports).
@@ -322,7 +322,7 @@ pnpm db:down
 # Start API server (with file watching)
 pnpm api:dev
 
-# Start Vite frontend (port 5173)
+# Start Vite frontend (port 5000)
 pnpm web:dev
 
 # Full production build (all packages)

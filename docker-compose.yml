@@ -1,5 +1,5 @@
 services:
-  app:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
@@ -12,3 +12,25 @@ services:
       PORT: "8080"
       NODE_ENV: production
       STATIC_DIR: /app/public
+
+  frontend:
+    image: node:24-bookworm-slim
+    working_dir: /app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      PORT: "5000"
+      BASE_PATH: "/"
+      API_PORT: "8080"
+      NODE_ENV: development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: >
+      bash -c "corepack enable && pnpm install --frozen-lockfile 2>/dev/null || pnpm install &&
+               PORT=5000 BASE_PATH=/ API_PORT=8080 pnpm --filter @workspace/anki-generator run dev"
+    depends_on:
+      - api

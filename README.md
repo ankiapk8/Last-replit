@@ -61,12 +61,12 @@ cp .env.example .env
 # Terminal A — API server (runs on PORT set in .env or defaults to 3001)
 PORT=3001 BASE_PATH=/ pnpm --filter @workspace/api-server run dev
 
-# Terminal B — Vite frontend (runs on PORT set in .env or 5173)
-PORT=5173 BASE_PATH=/ VITE_API_BASE=http://localhost:3001 \
+# Terminal B — Vite frontend (runs on PORT set in .env or 5000)
+PORT=5000 BASE_PATH=/ VITE_API_BASE=http://localhost:3001 \
   pnpm --filter @workspace/anki-generator run dev
 ```
 
-Then open http://localhost:5173.
+Then open http://localhost:5000.
 
 ---
 
@@ -101,14 +101,14 @@ ankigen/
 
 ## Environment variables
 
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `OPENROUTER_API_KEY` | Yes | OpenRouter key (`sk-or-...`) from [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | No | Defaults to `https://openrouter.ai/api/v1` |
-| `PORT` | No | Server port (default `8080`) |
-| `STATIC_DIR` | No | Path to built frontend (default `/app/public`) |
-| `NODE_ENV` | No | `production` or `development` |
+| Variable                          | Required | Description                                                                        |
+| --------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | Yes      | PostgreSQL connection string                                                       |
+| `OPENROUTER_API_KEY`              | Yes      | OpenRouter key (`sk-or-...`) from [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `AI_INTEGRATIONS_OPENAI_BASE_URL` | No       | Defaults to `https://openrouter.ai/api/v1`                                         |
+| `PORT`                            | No       | Server port (default `8080`)                                                       |
+| `STATIC_DIR`                      | No       | Path to built frontend (default `/app/public`)                                     |
+| `NODE_ENV`                        | No       | `production` or `development`                                                      |
 
 ---
 
@@ -117,6 +117,7 @@ ankigen/
 See [RENDER_DEPLOY.md](./RENDER_DEPLOY.md) for step-by-step instructions.
 
 The short version:
+
 1. Push this repo to GitHub
 2. In Render dashboard → **New → Blueprint** → point at your repo
 3. Set `OPENROUTER_API_KEY` when prompted
