@@ -38,19 +38,19 @@ async function checkDatabase(): Promise<CheckResult> {
 }
 
 async function checkAiProvider(): Promise<CheckResult> {
-  const hasOllamaCloud = !!process.env["OLLAMA_CLOUD_API_KEY"];
+  const hasOpenRouter = !!process.env["OPENROUTER_API_KEY"];
   const hasEnvKey =
-    hasOllamaCloud ||
-    process.env["OPENROUTER_API_KEY"] ||
+    hasOpenRouter ||
+    process.env["OLLAMA_CLOUD_API_KEY"] ||
     process.env["OPENAI_API_KEY1"] ||
     process.env["OPENAI_API_KEY"] ||
     process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
 
   if (hasEnvKey) {
     const baseUrl =
+      process.env["OPENROUTER_BASE_URL"] ||
       process.env["OLLAMA_CLOUD_BASE_URL"] ||
       process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] ||
-      process.env["OPENROUTER_BASE_URL"] ||
       "https://openrouter.ai/api/v1";
     try {
       new URL(baseUrl);
@@ -68,13 +68,13 @@ async function checkAiProvider(): Promise<CheckResult> {
     return {
       status: "fail",
       message:
-        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY.",
+        "AI provider is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY.",
     };
   } catch {
     return {
       status: "fail",
       message:
-        "AI provider is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY.",
+        "AI provider is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY.",
     };
   }
 }
@@ -100,7 +100,10 @@ router.get("/model-info", (_req, res) => {
  */
 router.post("/test-model", async (req, res): Promise<void> => {
   const { model, prompt = "Reply with OK" } = req.body as { model?: string; prompt?: string };
-  if (!model) { res.status(400).json({ error: "model is required" }); return; }
+  if (!model) {
+    res.status(400).json({ error: "model is required" });
+    return;
+  }
 
   try {
     const { openai } = await import("@workspace/integrations-openai-ai-server");
@@ -149,7 +152,8 @@ router.get("/healthz", async (_req, res) => {
  */
 router.get("/monitor", (_req, res) => {
   const snapshot = getMonitorSnapshot();
-  const httpStatus = snapshot.status === "healthy" ? 200 : snapshot.status === "degraded" ? 200 : 503;
+  const httpStatus =
+    snapshot.status === "healthy" ? 200 : snapshot.status === "degraded" ? 200 : 503;
   res.status(httpStatus).json(snapshot);
 });
 

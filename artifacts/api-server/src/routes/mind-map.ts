@@ -5,9 +5,15 @@ import { MINDMAP_MODEL } from "../lib/models";
 const router: IRouter = Router();
 const mindMapRateLimiter = createRateLimiter(10, 60_000);
 
-function isDailyLimitError(error: unknown): boolean {
+/** Determine whether a primary model error should trigger fallback to Ollama Cloud */
+function shouldFallback(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  return msg.includes("free-models-per-day");
+  const status = (error as { status?: number }).status;
+  if (msg.includes("free-models-per-day")) return true;
+  if (status === 429) return true;
+  if (status && status >= 500) return true;
+  if (/ECONNREFUSED|connect|connection|network|fetch failed|timeout/i.test(msg)) return true;
+  return false;
 }
 
 router.post("/mind-map", async (req, res): Promise<void> => {
@@ -27,18 +33,16 @@ router.post("/mind-map", async (req, res): Promise<void> => {
   }
 
   if (
-    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
+    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
-    res
-      .status(503)
-      .json({
-        error:
-          "AI is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY.",
-      });
+    res.status(503).json({
+      error:
+        "AI is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY.",
+    });
     return;
   }
 
@@ -85,13 +89,18 @@ Rules:
     try {
       console.log(`[mind-map] Calling model="${MINDMAP_MODEL}"`);
       completion = await makeRequest(openai, MINDMAP_MODEL);
-      console.log(`[mind-map] Response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`);
+      console.log(
+        `[mind-map] Response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
+      );
     } catch (primaryErr) {
       const status = (primaryErr as { status?: number }).status;
-      console.error(`[mind-map] PRIMARY model error (status=${status}):`, primaryErr instanceof Error ? primaryErr.message : primaryErr);
-      const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
+      console.error(
+        `[mind-map] PRIMARY model error (status=${status}):`,
+        primaryErr instanceof Error ? primaryErr.message : primaryErr
+      );
+      const fb = shouldFallback(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
-        console.warn("[mind-map] AI provider limit hit — falling back to backup model");
+        console.warn("[mind-map] OpenRouter failed — falling back to Ollama Cloud model");
         completion = await makeRequest(fb, FALLBACK_MODEL);
       } else {
         throw primaryErr;
@@ -118,7 +127,7 @@ Rules:
       status === 404
         ? `AI model '${MINDMAP_MODEL}' not found. Check your model name in .env.`
         : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-          ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
+          ? "Cannot connect to AI provider. Check your internet connection and OPENROUTER_BASE_URL."
           : `Mind map generation failed: ${message}`;
     res.status(503).json({ error: friendly });
   }

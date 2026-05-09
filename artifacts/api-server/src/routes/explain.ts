@@ -11,14 +11,14 @@ type ExplainMode = "full" | "revision" | "osce" | "brief" | "mnemonic" | "clinic
 
 async function getOpenAIClient() {
   if (
-    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
+    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI explanation is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY."
+      "AI explanation is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY."
     );
   }
   const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
@@ -26,9 +26,15 @@ async function getOpenAIClient() {
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
 }
 
-function isDailyLimitError(error: unknown): boolean {
+/** Determine whether a primary model error should trigger fallback to Ollama Cloud */
+function shouldFallback(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  return msg.includes("free-models-per-day");
+  const status = (error as { status?: number }).status;
+  if (msg.includes("free-models-per-day")) return true;
+  if (status === 429) return true;
+  if (status && status >= 500) return true;
+  if (/ECONNREFUSED|connect|connection|network|fetch failed|timeout/i.test(msg)) return true;
+  return false;
 }
 
 function buildPrompts(
@@ -266,11 +272,11 @@ router.post("/explain", async (req, res): Promise<void> => {
         signal: AbortSignal.timeout(120_000),
       });
     } catch (primaryErr) {
-      const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
+      const fb = shouldFallback(primaryErr) ? getFallbackOpenAI() : null;
       if (fb) {
         req.log.warn(
           { err: primaryErr },
-          "AI provider limit hit — falling back to backup model for explanation"
+          "OpenRouter failed — falling back to Ollama Cloud for explanation"
         );
         stream = await fb.chat.completions.create(
           { ...streamPayload, model: FALLBACK_MODEL },
@@ -296,7 +302,7 @@ router.post("/explain", async (req, res): Promise<void> => {
         : /context length|maximum context|too many tokens/i.test(message)
           ? "The explanation request was too long for this model. Try a shorter card."
           : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-            ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
+            ? "Cannot connect to AI provider. Check your internet connection and OPENROUTER_BASE_URL."
             : `AI explanation failed: ${message}`;
     if (!res.headersSent) {
       res.status(503).json({ error: friendly });
@@ -381,28 +387,34 @@ RULES:
     let completion;
     try {
       console.log(`[explain-batch] Calling model="${EXPLAIN_MODEL}" for ${batch.length} cards`);
-      completion = await openai.chat.completions.create({
-        model: EXPLAIN_MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        max_tokens: Math.min(8000, batch.length * 400),
-        temperature: 0.3,
-      }, { signal: AbortSignal.timeout(120_000) });
-    } catch (primaryErr) {
-      const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
-      if (fb) {
-        console.log(`[explain-batch] Falling back to backup model`);
-        completion = await fb.chat.completions.create({
-          model: FALLBACK_MODEL,
+      completion = await openai.chat.completions.create(
+        {
+          model: EXPLAIN_MODEL,
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
           ],
           max_tokens: Math.min(8000, batch.length * 400),
           temperature: 0.3,
-        }, { signal: AbortSignal.timeout(120_000) });
+        },
+        { signal: AbortSignal.timeout(120_000) }
+      );
+    } catch (primaryErr) {
+      const fb = shouldFallback(primaryErr) ? getFallbackOpenAI() : null;
+      if (fb) {
+        console.log(`[explain-batch] OpenRouter failed, falling back to Ollama Cloud model="${FALLBACK_MODEL}"`);
+        completion = await fb.chat.completions.create(
+          {
+            model: FALLBACK_MODEL,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+            max_tokens: Math.min(8000, batch.length * 400),
+            temperature: 0.3,
+          },
+          { signal: AbortSignal.timeout(120_000) }
+        );
       } else {
         throw primaryErr;
       }

@@ -54,10 +54,10 @@ describe("client.ts — provider detection", () => {
     expect(mod.isConfigured).toBe(true);
   });
 
-  it("FALLBACK_MODEL is gpt-4o-mini", async () => {
+  it("FALLBACK_MODEL is qwen3-coder:480b (Ollama Cloud text model)", async () => {
     vi.resetModules();
     const mod = await import("./client");
-    expect(mod.FALLBACK_MODEL).toBe("gpt-4o-mini");
+    expect(mod.FALLBACK_MODEL).toBe("qwen3-coder:480b");
   });
 });
 
@@ -67,20 +67,20 @@ describe("client.ts — getFallbackOpenAI", () => {
     restoreEnv;
   });
 
-  it("returns OpenRouter client when primary is qwen3-coder:latest and OpenRouter key exists", async () => {
+  it("returns Ollama Cloud client when primary is OpenRouter and Ollama key exists", async () => {
     vi.resetModules();
     clearAllApiKeys();
-    process.env.OLLAMA_CLOUD_API_KEY = "ollama-key";
     process.env.OPENROUTER_API_KEY = "or-key";
+    process.env.OLLAMA_CLOUD_API_KEY = "ollama-key";
     const mod = await import("./client");
     const fallback = mod.getFallbackOpenAI();
     expect(fallback).not.toBeNull();
   });
 
-  it("returns null when only qwen3-coder:latest key is set (no fallback provider)", async () => {
+  it("returns null when only OpenRouter key is set (no fallback provider)", async () => {
     vi.resetModules();
     clearAllApiKeys();
-    process.env.OLLAMA_CLOUD_API_KEY = "ollama-key";
+    process.env.OPENROUTER_API_KEY = "or-key";
     const mod = await import("./client");
     const fallback = mod.getFallbackOpenAI();
     expect(fallback).toBeNull();
@@ -94,13 +94,12 @@ describe("client.ts — getFallbackOpenAI", () => {
     expect(fallback).toBeNull();
   });
 
-  it("returns Replit key fallback when primary is OpenRouter", async () => {
+  it("returns null when primary is OpenRouter without Ollama (no .env fallback)", async () => {
     vi.resetModules();
     clearAllApiKeys();
     process.env.OPENROUTER_API_KEY = "or-key";
-    process.env.AI_INTEGRATIONS_OPENAI_API_KEY = "replit-key";
     const mod = await import("./client");
     const fallback = mod.getFallbackOpenAI();
-    expect(fallback).not.toBeNull();
+    expect(fallback).toBeNull();
   });
 });

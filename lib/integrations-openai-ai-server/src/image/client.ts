@@ -4,34 +4,35 @@ import { Buffer } from "node:buffer";
 
 /**
  * Provider priority (matches client.ts):
- *  1. OLLAMA_CLOUD_API_KEY → qwen3-coder:latest (primary)
- *  2. OPENROUTER_API_KEY   → OpenRouter (fallback)
- *  3. OPENAI_API_KEY       → OpenAI
+ *  1. OPENROUTER_API_KEY        → OpenRouter (primary)
+ *  2. OLLAMA_CLOUD_API_KEY      → Ollama Cloud (fallback)
+ *  3. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
  *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
  */
+const openRouterKey = process.env.OPENROUTER_API_KEY?.trim() || null;
 const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim() || null;
-const isOpenRouter = !!process.env.OPENROUTER_API_KEY && !ollamaCloudKey;
 
-const apiKey = ollamaCloudKey
-  ? ollamaCloudKey
-  : process.env.OPENROUTER_API_KEY ||
-    process.env.OPENAI_API_KEY1 ||
-    process.env.OPENAI_API_KEY ||
-    process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+const apiKey = openRouterKey
+  ? openRouterKey
+  : ollamaCloudKey
+    ? ollamaCloudKey
+    : (process.env.OPENAI_API_KEY1 ??
+      process.env.OPENAI_API_KEY ??
+      process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
 
 if (!apiKey) {
   throw new Error(
-    "No AI provider configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY."
+    "No AI provider configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY."
   );
 }
 
-const baseURL = ollamaCloudKey
-  ? process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/v1"
-  : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
-    process.env.OPENROUTER_BASE_URL ||
-    "https://openrouter.ai/api/v1";
+const baseURL = openRouterKey
+  ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
+  : ollamaCloudKey
+    ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
+    : (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1");
 
-const defaultHeaders = isOpenRouter
+const defaultHeaders = openRouterKey
   ? {
       "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
       "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",

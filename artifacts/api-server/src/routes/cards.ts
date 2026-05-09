@@ -108,9 +108,15 @@ async function getCardsAIClient() {
   return { openai, getFallbackOpenAI, FALLBACK_MODEL };
 }
 
-function isDailyLimitError(error: unknown): boolean {
+/** Determine whether a primary model error should trigger fallback to Ollama Cloud */
+function shouldFallback(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  return msg.includes("free-models-per-day");
+  const status = (error as { status?: number }).status;
+  if (msg.includes("free-models-per-day")) return true;
+  if (status === 429) return true;
+  if (status && status >= 500) return true;
+  if (/ECONNREFUSED|connect|connection|network|fetch failed|timeout/i.test(msg)) return true;
+  return false;
 }
 
 router.post("/cards/regenerate-batch", async (req, res, next): Promise<void> => {
@@ -170,27 +176,33 @@ Rules:
         console.log(
           `[regen-batch] Calling model="${FREE_TEXT_MODEL}" for ${cardsToRegenerate.length} cards`
         );
-        completion = await openai.chat.completions.create({
-          model: FREE_TEXT_MODEL,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          max_tokens: 4000,
-          temperature: 0.3,
-        }, { signal: AbortSignal.timeout(120_000) });
-      } catch (primaryErr) {
-        const fb = isDailyLimitError(primaryErr) ? getFallbackOpenAI() : null;
-        if (fb) {
-          completion = await fb.chat.completions.create({
-            model: FALLBACK_MODEL,
+        completion = await openai.chat.completions.create(
+          {
+            model: FREE_TEXT_MODEL,
             messages: [
               { role: "system", content: system },
               { role: "user", content: user },
             ],
             max_tokens: 4000,
             temperature: 0.3,
-          }, { signal: AbortSignal.timeout(120_000) });
+          },
+          { signal: AbortSignal.timeout(120_000) }
+        );
+      } catch (primaryErr) {
+        const fb = shouldFallback(primaryErr) ? getFallbackOpenAI() : null;
+        if (fb) {
+          completion = await fb.chat.completions.create(
+            {
+              model: FALLBACK_MODEL,
+              messages: [
+                { role: "system", content: system },
+                { role: "user", content: user },
+              ],
+              max_tokens: 4000,
+              temperature: 0.3,
+            },
+            { signal: AbortSignal.timeout(120_000) }
+          );
         } else {
           throw primaryErr;
         }

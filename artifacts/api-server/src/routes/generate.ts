@@ -5,7 +5,13 @@ import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL, QBANK_MODEL } from "../lib/mod
 import { getEffectiveIsPro, sendLimitError } from "../lib/free-tier-limits";
 import { createRateLimiter } from "../lib/rate-limiter";
 import { generationCache, ResponseCache } from "../lib/response-cache";
-import { startGeneration, completeGeneration, failGeneration, logError, logAiCall } from "../lib/monitor";
+import {
+  startGeneration,
+  completeGeneration,
+  failGeneration,
+  logError,
+  logAiCall,
+} from "../lib/monitor";
 
 // In-memory generation status map for polling fallback
 interface GenerationStatus {
@@ -74,9 +80,15 @@ function startHeartbeat(res: Response, intervalMs = 15000): ReturnType<typeof se
   }, intervalMs);
 }
 
-function isDailyLimitError(error: unknown): boolean {
+/** Determine whether a primary model error should trigger fallback to Ollama Cloud */
+function shouldFallback(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  return msg.includes("free-models-per-day");
+  const status = (error as { status?: number }).status;
+  if (msg.includes("free-models-per-day")) return true;
+  if (status === 429) return true;
+  if (status && status >= 500) return true;
+  if (/ECONNREFUSED|connect|connection|network|fetch failed|timeout/i.test(msg)) return true;
+  return false;
 }
 
 // ─── AI client ────────────────────────────────────────────────────────────────
@@ -90,32 +102,32 @@ let cachedAIClient: {
 
 async function getAIClient() {
   if (
-    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
+    !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
     throw new Error(
-      "AI is not configured. Set OLLAMA_CLOUD_API_KEY for qwen3-coder:latest, or set OPENROUTER_API_KEY."
+      "AI is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY."
     );
   }
   const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
     await import("@workspace/integrations-openai-ai-server");
 
   // Log which AI provider is active
-  const ollamaKey = process.env.OLLAMA_CLOUD_API_KEY?.trim();
-  const provider = ollamaKey
-    ? "ollama"
-    : process.env.OPENROUTER_API_KEY
-      ? "openrouter"
+  const orKey = process.env.OPENROUTER_API_KEY?.trim();
+  const provider = orKey
+    ? "openrouter"
+    : process.env.OLLAMA_CLOUD_API_KEY
+      ? "ollama-cloud"
       : "openai/replit";
-  const baseURL = ollamaKey
-    ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
-    : process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+  const baseURL = orKey
+    ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
+    : process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1";
   console.log(`[AI] Provider: ${provider}, BaseURL: ${baseURL}`);
   console.log(
-    `[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "deepseek-v4-flash"}" explain="${process.env.AI_TEXT_MODEL || "qwen3-coder:480b"}"`
+    `[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "tencent/hy3-preview:free"}" explain="${process.env.AI_TEXT_MODEL || "openai/gpt-oss-120b:free"}"`
   );
   console.log(
     `[AI] Fallback: ${FALLBACK_MODEL}, Fallback available: ${getFallbackOpenAI() !== null}`
@@ -348,15 +360,18 @@ async function generateTextCardsUnified(
     console.log(
       `[generate] Unified text generation: calling model="${FREE_TEXT_MODEL}" with ~${preparedText.length} chars`
     );
-    completion = await openai.chat.completions.create({
-      model: FREE_TEXT_MODEL,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      max_tokens: 8000,
-      temperature: 0.3,
-    }, { signal: AbortSignal.timeout(120_000) });
+    completion = await openai.chat.completions.create(
+      {
+        model: FREE_TEXT_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        max_tokens: 8000,
+        temperature: 0.3,
+      },
+      { signal: AbortSignal.timeout(120_000) }
+    );
     console.log(
       `[generate] Unified text generation: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
     );
@@ -368,20 +383,23 @@ async function generateTextCardsUnified(
       `[generate] Unified text generation: PRIMARY model error (status=${status}):`,
       err instanceof Error ? err.message : err
     );
-    const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+    const fb = shouldFallback(err) ? getFallbackOpenAI() : null;
     if (fb) {
       console.log(
-        `[generate] Unified text generation: attempting fallback model="${FALLBACK_MODEL}"`
+        `[generate] Unified text generation: OpenRouter failed, falling back to Ollama Cloud model="${FALLBACK_MODEL}"`
       );
-      completion = await fb.chat.completions.create({
-        model: FALLBACK_MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        max_tokens: 8000,
-        temperature: 0.3,
-      }, { signal: AbortSignal.timeout(120_000) });
+      completion = await fb.chat.completions.create(
+        {
+          model: FALLBACK_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          max_tokens: 8000,
+          temperature: 0.3,
+        },
+        { signal: AbortSignal.timeout(120_000) }
+      );
     } else {
       throw err;
     }
@@ -451,12 +469,15 @@ Rules:
       console.log(
         `[generate] Unified visual generation: calling model="${VISUAL_DETECTION_MODEL}" with ${content.length - 1} images`
       );
-      completion = await openai.chat.completions.create({
-        model: VISUAL_DETECTION_MODEL,
-        messages: [{ role: "user", content }],
-        max_tokens: 4000,
-        temperature: 0.2,
-      }, { signal: AbortSignal.timeout(120_000) });
+      completion = await openai.chat.completions.create(
+        {
+          model: VISUAL_DETECTION_MODEL,
+          messages: [{ role: "user", content }],
+          max_tokens: 4000,
+          temperature: 0.2,
+        },
+        { signal: AbortSignal.timeout(120_000) }
+      );
       console.log(
         `[generate] Unified visual generation: response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
       );
@@ -466,17 +487,20 @@ Rules:
         `[generate] Unified visual generation: PRIMARY model error (status=${status}):`,
         err instanceof Error ? err.message : err
       );
-      const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+      const fb = shouldFallback(err) ? getFallbackOpenAI() : null;
       if (fb) {
         console.log(
-          `[generate] Unified visual generation: attempting fallback model="${FALLBACK_MODEL}"`
+          `[generate] Unified visual generation: OpenRouter failed, falling back to Ollama Cloud model="${FALLBACK_MODEL}"`
         );
-        completion = await fb.chat.completions.create({
-          model: FALLBACK_MODEL,
-          messages: [{ role: "user", content }],
-          max_tokens: 4000,
-          temperature: 0.2,
-        }, { signal: AbortSignal.timeout(120_000) });
+        completion = await fb.chat.completions.create(
+          {
+            model: FALLBACK_MODEL,
+            messages: [{ role: "user", content }],
+            max_tokens: 4000,
+            temperature: 0.2,
+          },
+          { signal: AbortSignal.timeout(120_000) }
+        );
       } else {
         throw err;
       }
@@ -686,10 +710,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
 
     // Track success status in memory for polling fallback
     completeGeneration(generationId, deckId);
-    generationStatusMap.set(generationId, { status: "completed",
-      deckId,
-      startedAt,
-    });
+    generationStatusMap.set(generationId, { status: "completed", deckId, startedAt });
 
     sendProgress(100, "Done!", savedCount, "done");
     sendSSE(res, {
@@ -703,23 +724,24 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
     const status = (err as { status?: number }).status;
     const friendly =
       status === 401 || /user not found|invalid.*key|unauthorized/i.test(message)
-        ? "AI authentication failed. Check your OLLAMA_CLOUD_API_KEY or OPENROUTER_API_KEY in .env."
+        ? "AI authentication failed. Check your OPENROUTER_API_KEY or OLLAMA_CLOUD_API_KEY in .env."
         : status === 404
           ? `AI model '${FREE_TEXT_MODEL}' not found. Check your model name in .env.`
           : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-            ? "AI provider quota exceeded. Check your qwen3-coder:latest or OpenRouter account."
+            ? "AI provider quota exceeded. Check your OpenRouter or Ollama Cloud account."
             : /context length|maximum context|too many tokens/i.test(message)
               ? "Content is too long for this AI model. Try shorter text or fewer pages."
               : /not configured|api key/i.test(message)
                 ? message
                 : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-                  ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
+                  ? "Cannot connect to AI provider. Check your internet connection and OPENROUTER_BASE_URL."
                   : `Generation failed: ${message}`;
 
     // Track error status in memory for polling fallback
     failGeneration(generationId, friendly);
     generationStatusMap.set(generationId, {
-      status: "failed", error: friendly,
+      status: "failed",
+      error: friendly,
       startedAt,
     });
 
@@ -838,15 +860,18 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
         console.log(
           `[generate-qbank] Calling model="${QBANK_MODEL}" with ~${preparedText.length} chars`
         );
-        completion = await openai.chat.completions.create({
-          model: QBANK_MODEL,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          max_tokens: 8000,
-          temperature: 0.3,
-        }, { signal: AbortSignal.timeout(120_000) });
+        completion = await openai.chat.completions.create(
+          {
+            model: QBANK_MODEL,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+            max_tokens: 8000,
+            temperature: 0.3,
+          },
+          { signal: AbortSignal.timeout(120_000) }
+        );
         console.log(
           `[generate-qbank] Response received, content length=${completion.choices[0]?.message?.content?.length ?? 0}`
         );
@@ -858,18 +883,23 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
           `[generate-qbank] PRIMARY model error (status=${status}):`,
           err instanceof Error ? err.message : err
         );
-        const fb = isDailyLimitError(err) ? getFallbackOpenAI() : null;
+        const fb = shouldFallback(err) ? getFallbackOpenAI() : null;
         if (fb) {
-          console.log(`[generate-qbank] Attempting fallback model="${FALLBACK_MODEL}"`);
-          completion = await fb.chat.completions.create({
-            model: FALLBACK_MODEL,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: user },
-            ],
-            max_tokens: 8000,
-            temperature: 0.3,
-          }, { signal: AbortSignal.timeout(120_000) });
+          console.log(
+            `[generate-qbank] OpenRouter failed, falling back to Ollama Cloud model="${FALLBACK_MODEL}"`
+          );
+          completion = await fb.chat.completions.create(
+            {
+              model: FALLBACK_MODEL,
+              messages: [
+                { role: "system", content: system },
+                { role: "user", content: user },
+              ],
+              max_tokens: 8000,
+              temperature: 0.3,
+            },
+            { signal: AbortSignal.timeout(120_000) }
+          );
         } else {
           throw err;
         }
@@ -918,10 +948,7 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
 
     // Track success status in memory for polling fallback
     completeGeneration(generationId, qbankId);
-    generationStatusMap.set(generationId, { status: "completed",
-      deckId: qbankId,
-      startedAt,
-    });
+    generationStatusMap.set(generationId, { status: "completed", deckId: qbankId, startedAt });
 
     sendProgress(100, "Done!");
     sendSSE(res, {
@@ -935,21 +962,22 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
     const status = (err as { status?: number }).status;
     const friendly =
       status === 401 || /user not found|invalid.*key|unauthorized/i.test(message)
-        ? "AI authentication failed. Check your OLLAMA_CLOUD_API_KEY or OPENROUTER_API_KEY in .env."
+        ? "AI authentication failed. Check your OPENROUTER_API_KEY or OLLAMA_CLOUD_API_KEY in .env."
         : status === 404
           ? `AI model '${QBANK_MODEL}' not found. Check your model name in .env.`
           : /quota|rate.?limit|insufficient|payment|billing/i.test(message)
-            ? "AI provider quota exceeded. Check your qwen3-coder:latest or OpenRouter account."
+            ? "AI provider quota exceeded. Check your OpenRouter or Ollama Cloud account."
             : /not configured|api key/i.test(message)
               ? message
               : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-                ? "Cannot connect to AI provider. Check your internet connection and OLLAMA_CLOUD_BASE_URL."
+                ? "Cannot connect to AI provider. Check your internet connection and OPENROUTER_BASE_URL."
                 : `Question bank generation failed: ${message}`;
 
     // Track error status in memory for polling fallback
     failGeneration(generationId, friendly);
     generationStatusMap.set(generationId, {
-      status: "failed", error: friendly,
+      status: "failed",
+      error: friendly,
       startedAt,
     });
 
