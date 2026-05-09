@@ -38,23 +38,7 @@ export async function checkIsPro(userId: string): Promise<boolean> {
     if (typeof override === "boolean") return override;
   }
   try {
-    // Primary check: stripe.subscriptions schema (populated by stripe-replit-sync)
-    const result = await db.execute(
-      sql`
-        SELECT 1
-        FROM stripe.subscriptions s
-        JOIN public.users u ON u.stripe_customer_id = s.customer
-        WHERE u.id = ${userId}
-          AND s.status = 'active'
-        LIMIT 1
-      `,
-    );
-    if (result.rows.length > 0) return true;
-  } catch {
-    // stripe schema not available — fall through to column-based check
-  }
-  try {
-    // Fallback: check stripe_subscription_id OR manual_pro columns on the user row
+    // Check stripe_subscription_id OR manual_pro columns on the user row
     const userRow = await db.execute(
       sql`SELECT stripe_subscription_id, manual_pro FROM public.users WHERE id = ${userId} LIMIT 1`,
     );

@@ -11,8 +11,6 @@ const router: IRouter = Router();
 function resolveBaseUrl(): string {
   // Explicit override — highest priority (use for Codespaces, ngrok, custom domains)
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  // Replit production
-  if (process.env.REPLIT_DOMAINS) return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
   // GitHub Codespaces — frontend runs on port 5000
   if (process.env.CODESPACE_NAME && process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN) {
     return `https://${process.env.CODESPACE_NAME}-5000.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`;
@@ -24,22 +22,27 @@ function resolveBaseUrl(): string {
 async function getActiveSubscription(userId: string) {
   const result = await db.execute(
     sql`
-      SELECT s.id, s.status, s.current_period_end, s.cancel_at_period_end
-      FROM stripe.subscriptions s
-      JOIN public.users u ON u.stripe_customer_id = s.customer
-      WHERE u.id = ${userId}
-        AND s.status = 'active'
+      SELECT stripe_subscription_id, stripe_customer_id
+      FROM public.users
+      WHERE id = ${userId}
+        AND stripe_subscription_id IS NOT NULL
       LIMIT 1
     `
   );
-  return result.rows[0] ?? null;
+  const row = result.rows[0] as
+    | { stripe_subscription_id?: string; stripe_customer_id?: string }
+    | undefined;
+  if (!row?.stripe_subscription_id) return null;
+  return {
+    id: row.stripe_subscription_id,
+    status: "active",
+    current_period_end: null,
+    cancel_at_period_end: false,
+  };
 }
 
 router.get("/subscription/stripe-configured", async (_req, res): Promise<void> => {
-  const hasDirectKey = !!process.env.STRIPE_SECRET_KEY;
-  const hasConnector = !!(process.env.REPLIT_CONNECTORS_HOSTNAME &&
-    (process.env.REPL_IDENTITY || process.env.WEB_REPL_RENEWAL));
-  res.json({ configured: hasDirectKey || hasConnector });
+  res.json({ configured: !!process.env.STRIPE_SECRET_KEY });
 });
 
 router.get("/subscription/status", async (req, res, next): Promise<void> => {
@@ -51,7 +54,12 @@ router.get("/subscription/status", async (req, res, next): Promise<void> => {
         res.json({
           isPro: devEntry.isPro,
           subscription: devEntry.isPro
-            ? { id: "dev-override", status: devEntry.simulated ? "simulated" : "dev-forced", currentPeriodEnd: null, cancelAtPeriodEnd: false }
+            ? {
+                id: "dev-override",
+                status: devEntry.simulated ? "simulated" : "dev-forced",
+                currentPeriodEnd: null,
+                cancelAtPeriodEnd: false,
+              }
             : null,
           devOverride: true,
           simulated: devEntry.simulated,
@@ -71,12 +79,14 @@ router.get("/subscription/status", async (req, res, next): Promise<void> => {
 
     res.json({
       isPro,
-      subscription: sub ? {
-        id: sub.id as string,
-        status: sub.status as string,
-        currentPeriodEnd: sub.current_period_end as string | null,
-        cancelAtPeriodEnd: sub.cancel_at_period_end as boolean,
-      } : null,
+      subscription: sub
+        ? {
+            id: sub.id as string,
+            status: sub.status as string,
+            currentPeriodEnd: sub.current_period_end as string | null,
+            cancelAtPeriodEnd: sub.cancel_at_period_end as boolean,
+          }
+        : null,
     });
   } catch (err) {
     logger.error({ err }, "Failed to get subscription status");
@@ -86,45 +96,41 @@ router.get("/subscription/status", async (req, res, next): Promise<void> => {
 
 router.get("/subscription/products", async (_req, res, next): Promise<void> => {
   try {
-    const result = await db.execute(
-      sql`
-        SELECT
-          p.id as product_id,
-          p.name as product_name,
-          p.description as product_description,
-          pr.id as price_id,
-          pr.unit_amount,
-          pr.currency,
-          pr.recurring
-        FROM stripe.products p
-        JOIN stripe.prices pr ON pr.product = p.id AND pr.active = true
-        WHERE p.active = true
-          AND p.metadata->>'tier' = 'pro'
-        ORDER BY pr.unit_amount ASC
-      `
-    );
+    const stripe = await getUncachableStripeClient();
+    const [products, prices] = await Promise.all([
+      stripe.products.list({ active: true }),
+      stripe.prices.list({ active: true }),
+    ]);
 
-    const products: Record<string, { id: string; name: string; description: string; prices: any[] }> = {};
-    for (const row of result.rows as any[]) {
-      if (!products[row.product_id]) {
-        products[row.product_id] = {
-          id: row.product_id,
-          name: row.product_name,
-          description: row.product_description,
+    const productList: Record<
+      string,
+      { id: string; name: string; description: string; prices: any[] }
+    > = {};
+    for (const p of products.data) {
+      if (p.metadata?.tier === "pro") {
+        productList[p.id] = {
+          id: p.id,
+          name: p.name,
+          description: p.description ?? "",
           prices: [],
         };
       }
-      products[row.product_id].prices.push({
-        id: row.price_id,
-        unitAmount: row.unit_amount,
-        currency: row.currency,
-        recurring: row.recurring,
-      });
+    }
+    for (const pr of prices.data) {
+      const productId = typeof pr.product === "string" ? pr.product : pr.product.id;
+      if (productList[productId]) {
+        productList[productId].prices.push({
+          id: pr.id,
+          unitAmount: pr.unit_amount,
+          currency: pr.currency,
+          recurring: pr.recurring,
+        });
+      }
     }
 
-    res.json({ data: Object.values(products) });
+    res.json({ data: Object.values(productList) });
   } catch (err) {
-    logger.warn({ err }, "Failed to fetch products from stripe schema — Stripe may not be initialized yet");
+    logger.warn({ err }, "Failed to fetch products from Stripe API");
     res.json({ data: [] });
   }
 });
@@ -160,7 +166,8 @@ router.post("/subscription/checkout", async (req, res, next): Promise<void> => {
         name: [user.firstName, user.lastName].filter(Boolean).join(" ") || undefined,
         metadata: { userId },
       });
-      await db.update(usersTable)
+      await db
+        .update(usersTable)
         .set({ stripeCustomerId: customer.id })
         .where(eq(usersTable.id, userId));
       customerId = customer.id;
@@ -169,9 +176,9 @@ router.post("/subscription/checkout", async (req, res, next): Promise<void> => {
     const baseUrl = resolveBaseUrl();
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      payment_method_types: ['card'],
+      payment_method_types: ["card"],
       line_items: [{ price: effectivePriceId, quantity: 1 }],
-      mode: 'subscription',
+      mode: "subscription",
       success_url: `${baseUrl}/pricing?success=1`,
       cancel_url: `${baseUrl}/pricing?canceled=1`,
     });
@@ -184,18 +191,19 @@ router.post("/subscription/checkout", async (req, res, next): Promise<void> => {
 
 router.get("/subscription/usage", async (req, res, next): Promise<void> => {
   try {
-    const devEntry = process.env.NODE_ENV !== "production" ? getDevOverrideForRequest(req) : undefined;
+    const devEntry =
+      process.env.NODE_ENV !== "production" ? getDevOverrideForRequest(req) : undefined;
     if (!req.isAuthenticated() && !devEntry) {
       res.json({ decks: 0, deckLimit: 2, exports: 0, exportLimit: 1 });
       return;
     }
     const userId = req.isAuthenticated() ? req.user!.id : null;
-    const isPro = userId
-      ? await checkIsPro(userId)
-      : devEntry?.isPro ?? false;
+    const isPro = userId ? await checkIsPro(userId) : (devEntry?.isPro ?? false);
 
     const deckResult = userId
-      ? await db.execute(sql`SELECT cast(count(*) as int) AS cnt FROM decks WHERE user_id = ${userId}`)
+      ? await db.execute(
+          sql`SELECT cast(count(*) as int) AS cnt FROM decks WHERE user_id = ${userId}`
+        )
       : { rows: [{ cnt: 0 }] };
     const deckCount = (deckResult.rows[0] as { cnt?: number } | undefined)?.cnt ?? 0;
 
@@ -204,9 +212,13 @@ router.get("/subscription/usage", async (req, res, next): Promise<void> => {
     const exportResult = await db.execute(
       sql`SELECT count FROM quota_usage WHERE key = ${exportKey} AND metric = 'apkg_export' AND period = ${today}`
     );
-    const exportCount = typeof (exportResult.rows[0] as { count?: unknown } | undefined)?.count === 'number'
-      ? (exportResult.rows[0] as { count: number }).count
-      : parseInt(String((exportResult.rows[0] as { count?: unknown } | undefined)?.count ?? '0'), 10);
+    const exportCount =
+      typeof (exportResult.rows[0] as { count?: unknown } | undefined)?.count === "number"
+        ? (exportResult.rows[0] as { count: number }).count
+        : parseInt(
+            String((exportResult.rows[0] as { count?: unknown } | undefined)?.count ?? "0"),
+            10
+          );
 
     res.json({
       decks: deckCount,
@@ -215,7 +227,7 @@ router.get("/subscription/usage", async (req, res, next): Promise<void> => {
       exportLimit: isPro ? null : 1,
     });
   } catch (err) {
-    logger.error({ err }, 'Failed to get usage');
+    logger.error({ err }, "Failed to get usage");
     res.json({ decks: 0, deckLimit: 2, exports: 0, exportLimit: 1 });
   }
 });

@@ -98,6 +98,7 @@ let cachedAIClient: {
   openai: Awaited<ReturnType<typeof getAIClient>>["openai"];
   getFallbackOpenAI: Awaited<ReturnType<typeof getAIClient>>["getFallbackOpenAI"];
   FALLBACK_MODEL: string;
+  withRetry: Awaited<ReturnType<typeof getAIClient>>["withRetry"];
 } | null = null;
 
 async function getAIClient() {
@@ -112,7 +113,7 @@ async function getAIClient() {
       "AI is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY."
     );
   }
-  const { openai, getFallbackOpenAI, FALLBACK_MODEL } =
+  const { openai, getFallbackOpenAI, FALLBACK_MODEL, withRetry } =
     await import("@workspace/integrations-openai-ai-server");
 
   // Log which AI provider is active
@@ -121,10 +122,10 @@ async function getAIClient() {
     ? "openrouter"
     : process.env.OLLAMA_CLOUD_API_KEY
       ? "ollama-cloud"
-      : "openai/replit";
+      : "openai";
   const baseURL = orKey
     ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
-    : process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1";
+    : process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/api";
   console.log(`[AI] Provider: ${provider}, BaseURL: ${baseURL}`);
   console.log(
     `[AI] Models — text="${FREE_TEXT_MODEL}" vision="${VISUAL_DETECTION_MODEL}" qbank="${QBANK_MODEL}" mindmap="${process.env.AI_MINDMAP_MODEL || "tencent/hy3-preview:free"}" explain="${process.env.AI_TEXT_MODEL || "openai/gpt-oss-120b:free"}"`
@@ -133,7 +134,7 @@ async function getAIClient() {
     `[AI] Fallback: ${FALLBACK_MODEL}, Fallback available: ${getFallbackOpenAI() !== null}`
   );
 
-  return { openai, getFallbackOpenAI, FALLBACK_MODEL };
+  return { openai, getFallbackOpenAI, FALLBACK_MODEL, withRetry };
 }
 
 /** Get cached AI client (initialized once, reused across requests) */
@@ -660,7 +661,7 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
 
   try {
     // Initialize AI client once (cached across requests), pass to all generation functions
-    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getCachedAIClient();
+    const { openai, getFallbackOpenAI, FALLBACK_MODEL, withRetry } = await getCachedAIClient();
 
     const allCards: StagedCard[] = [];
 
@@ -830,7 +831,7 @@ router.post("/generate-qbank/stream", async (req: Request, res: Response): Promi
   };
 
   try {
-    const { openai, getFallbackOpenAI, FALLBACK_MODEL } = await getCachedAIClient();
+    const { openai, getFallbackOpenAI, FALLBACK_MODEL, withRetry } = await getCachedAIClient();
 
     // Send generation ID as first event so client can poll if SSE drops
     sendSSE(res, { type: "init", generationId });

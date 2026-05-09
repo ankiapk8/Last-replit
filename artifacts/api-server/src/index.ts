@@ -2,8 +2,6 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { ensureDatabaseSchema } from "@workspace/db";
 import { autoConfigureFromEnv } from "./lib/apk-builder";
-import { runMigrations } from 'stripe-replit-sync';
-import { getStripeSync } from "./stripeClient";
 import { loadDevOverridesFromDB } from "./lib/dev-overrides";
 
 const rawPort = process.env["PORT"] ?? "3001";
@@ -14,38 +12,18 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function initStripe(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    logger.warn("DATABASE_URL not set — skipping Stripe initialization");
+  if (!process.env.STRIPE_SECRET_KEY) {
+    logger.info("STRIPE_SECRET_KEY not set — skipping Stripe initialization");
     return;
   }
-  try {
-    logger.info("Initializing Stripe schema...");
-    await runMigrations({ databaseUrl });
-    logger.info("Stripe schema ready");
-
-    const stripeSync = await getStripeSync();
-    if (process.env.REPLIT_DOMAINS) {
-      const webhookBaseUrl = `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`;
-      await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/stripe/webhook`);
-      logger.info("Stripe webhook configured");
-    } else {
-      logger.info("REPLIT_DOMAINS not set — skipping webhook registration (local dev mode)");
-    }
-
-    stripeSync.syncBackfill()
-      .then(() => logger.info("Stripe data synced"))
-      .catch(err => logger.warn({ err }, "Stripe backfill failed (non-fatal)"));
-  } catch (err) {
-    logger.warn({ err }, "Stripe initialization failed (non-fatal — connect Stripe integration to enable payments)");
-  }
+  logger.info("Stripe configured (direct API key)");
 }
 
 async function main(): Promise<void> {
   await ensureDatabaseSchema();
 
   if (process.env.NODE_ENV !== "production") {
-    await loadDevOverridesFromDB().catch(err =>
+    await loadDevOverridesFromDB().catch((err) =>
       logger.warn({ err }, "Dev overrides load failed (non-fatal)")
     );
     logger.info("Dev overrides loaded from DB");

@@ -32,14 +32,18 @@ git push origin main
 
 ### 3. Set secrets
 
-When prompted, fill in the one secret value:
+When prompted, fill in these secret values:
 
 | Key | Value |
 |-----|-------|
 | `OPENROUTER_API_KEY` | Your OpenRouter key — get one free at [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OLLAMA_CLOUD_API_KEY` | Your Ollama Cloud key — get one at [ollama.com](https://ollama.com) (enables cross-provider fallback when OpenRouter quota is exceeded) |
 
-Everything else (`DATABASE_URL`, `PORT`, `STATIC_DIR`, `NODE_ENV`,
-`AI_INTEGRATIONS_OPENAI_BASE_URL`) is pre-configured in `render.yaml`.
+Everything else (`DATABASE_URL`, `PORT`, `STATIC_DIR`, `NODE_ENV`) is pre-configured in `render.yaml`.
+
+> **Important:** Setting `OLLAMA_CLOUD_API_KEY` enables automatic cross-provider fallback.
+> When OpenRouter free-tier quota is exceeded, the app will automatically retry with Ollama Cloud.
+> This prevents the "AI provider quota exceeded" error on Render.
 
 ### 4. Wait for the first build
 
@@ -57,8 +61,9 @@ Once the build completes, your app will be live at
 | Variable | Source | Notes |
 |---|---|---|
 | `DATABASE_URL` | Render Postgres (auto-injected) | Wired by `render.yaml` |
-| `AI_INTEGRATIONS_OPENAI_BASE_URL` | Set in `render.yaml` | `https://openrouter.ai/api/v1` |
 | `OPENROUTER_API_KEY` | **You provide at deploy time** | Real OpenRouter key (`sk-or-...`) |
+| `OLLAMA_CLOUD_API_KEY` | **You provide at deploy time** | Ollama Cloud key for cross-provider fallback |
+| `OLLAMA_CLOUD_BASE_URL` | Set in `render.yaml` | `https://ollama.com/api` |
 | `PORT` | Set in `render.yaml` | `8080` — do not change |
 | `STATIC_DIR` | Set in `render.yaml` | `/app/public` — do not change |
 | `NODE_ENV` | Set in `render.yaml` | `production` |

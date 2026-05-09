@@ -39,9 +39,10 @@ async function checkDatabase(): Promise<CheckResult> {
 
 async function checkAiProvider(): Promise<CheckResult> {
   const hasOpenRouter = !!process.env["OPENROUTER_API_KEY"];
+  const hasOllamaCloud = !!process.env["OLLAMA_CLOUD_API_KEY"];
   const hasEnvKey =
     hasOpenRouter ||
-    process.env["OLLAMA_CLOUD_API_KEY"] ||
+    hasOllamaCloud ||
     process.env["OPENAI_API_KEY1"] ||
     process.env["OPENAI_API_KEY"] ||
     process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
@@ -57,13 +58,21 @@ async function checkAiProvider(): Promise<CheckResult> {
     } catch {
       return { status: "fail", message: `Invalid AI base URL: ${baseUrl}` };
     }
-    return { status: "ok" };
+    const providers: string[] = [];
+    if (hasOpenRouter) providers.push("openrouter");
+    if (hasOllamaCloud) providers.push("ollama-cloud");
+    if (process.env["OPENAI_API_KEY1"] || process.env["OPENAI_API_KEY"]) providers.push("openai");
+    const fallback =
+      hasOpenRouter && hasOllamaCloud
+        ? "cross-provider fallback available"
+        : "no cross-provider fallback";
+    return { status: "ok", message: `providers: ${providers.join(", ")} (${fallback})` };
   }
 
   try {
     const { isConfigured } = await import("@workspace/integrations-openai-ai-server");
     if (isConfigured) {
-      return { status: "ok" };
+      return { status: "ok", message: "configured via @workspace/integrations-openai-ai-server" };
     }
     return {
       status: "fail",

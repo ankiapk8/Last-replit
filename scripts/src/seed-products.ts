@@ -1,8 +1,16 @@
-import { getUncachableStripeClient } from './stripeClient';
+import Stripe from 'stripe';
+
+async function getStripeClient(): Promise<Stripe> {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  if (!secretKey) {
+    throw new Error('STRIPE_SECRET_KEY is not set');
+  }
+  return new Stripe(secretKey);
+}
 
 async function createProducts() {
   try {
-    const stripe = await getUncachableStripeClient();
+    const stripe = await getStripeClient();
 
     console.log('Checking for existing AnkiGen Pro product...');
 
@@ -13,8 +21,8 @@ async function createProducts() {
     if (existing.data.length > 0) {
       console.log('AnkiGen Pro product already exists:', existing.data[0].id);
       const prices = await stripe.prices.list({ product: existing.data[0].id, active: true });
-      prices.data.forEach(p => {
-        console.log(`  Price: ${p.id} — $${(p.unit_amount! / 100).toFixed(2)}/${(p.recurring?.interval ?? 'one-time')}`);
+      prices.data.forEach((p: Stripe.Price) => {
+        console.log(`  Price: ${p.id} — $${((p.unit_amount ?? 0) / 100).toFixed(2)}/${(p.recurring?.interval ?? 'one-time')}`);
       });
       return;
     }
@@ -46,9 +54,8 @@ async function createProducts() {
     console.log(`Created yearly price: $79.99/year (${yearlyPrice.id})`);
 
     console.log('\n✓ Products and prices created successfully!');
-    console.log('Webhooks will sync this data to your database automatically.');
-  } catch (error: any) {
-    console.error('Error creating products:', error.message);
+  } catch (error: unknown) {
+    console.error('Error creating products:', error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

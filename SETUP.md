@@ -228,12 +228,11 @@ AnkiGen has a built-in dev-only subscription control panel (no Stripe required) 
 
 When running in development (`NODE_ENV=development`), a **Dev Mode** panel appears in the bottom-left corner of the app. It lets you instantly switch between Free and Pro plans:
 
-1. Log in with Replit auth (visit `http://localhost:5000` and click the login link in the header).
-2. Open the **Dev Mode** panel in the bottom-left corner.
-3. Click **"Simulate Subscribe"** — this calls `POST /api/dev/simulate-subscribe` and marks your session as Pro without touching Stripe.
-4. The app immediately unlocks all Pro features (visual cards, Q-bank, mind maps, unlimited exports).
-5. Click **"Cancel Simulated Sub"** to revert to Free.
-6. The override **persists across page refreshes** (stored in `localStorage`).
+1. Open the **Dev Mode** panel in the bottom-left corner.
+2. Click **"Simulate Subscribe"** — this calls `POST /api/dev/simulate-subscribe` and marks your session as Pro without touching Stripe.
+3. The app immediately unlocks all Pro features (visual cards, Q-bank, mind maps, unlimited exports).
+4. Click **"Cancel Simulated Sub"** to revert to Free.
+5. The override **persists across page refreshes** (stored in `localStorage`).
 
 The override badge **DEV PRO** / **DEV FREE** also appears in the top navigation bar so you always know which mode is active.
 

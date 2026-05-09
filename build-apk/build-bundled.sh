@@ -3,7 +3,7 @@
 # The APK still calls the backend at $API_BASE for AI generation, decks, etc.
 #
 # Required env:
-#   API_BASE   — public https URL of the API (e.g. https://app.replit.app/api)
+#   API_BASE   — public https URL of the API (e.g. https://app.example.com/api)
 # Optional env:
 #   APK_OUT    — output APK path (default: artifacts/anki-generator/public/anki-cards.apk)
 #   META_OUT   — output metadata json path (default: APK_OUT + ".json")
@@ -11,7 +11,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-API_BASE="${API_BASE:-https://${REPLIT_DEV_DOMAIN}/api}"
+API_BASE="${API_BASE}"
+if [ -z "$API_BASE" ]; then
+  echo "ERROR: API_BASE environment variable is required"
+  echo "Example: API_BASE=https://myapp.example.com/api ./build-apk/build-bundled.sh"
+  exit 1
+fi
 HOST=$(echo "$API_BASE" | sed -E 's#https?://([^/]+).*#\1#')
 
 APK_OUT="${APK_OUT:-artifacts/anki-generator/public/anki-cards.apk}"
@@ -56,7 +61,7 @@ cat > "$META_OUT" <<EOF
   "targetUrl": "https://$HOST",
   "host": "$HOST",
   "additionalHosts": [],
-  "packageId": "app.replit.ankigen",
+  "packageId": "app.ankigen.mobile",
   "versionName": "2.0-bundled",
   "versionCode": 2,
   "sizeBytes": $SIZE,

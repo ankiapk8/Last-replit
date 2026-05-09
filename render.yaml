@@ -19,11 +19,11 @@ services:
         fromDatabase:
           name: anki-generator-db
           property: connectionString
-      # qwen3-coder:latest (primary AI provider)
+      # Ollama Cloud (primary AI provider)
       - key: OLLAMA_CLOUD_API_KEY
         sync: false
       - key: OLLAMA_CLOUD_BASE_URL
-        value: https://ollama.com/v1
+        value: https://ollama.com/api
       # OpenRouter (fallback backend)
       - key: OPENROUTER_API_KEY
         sync: false

@@ -12,8 +12,6 @@ if (rawPort && (Number.isNaN(port) || port <= 0)) {
 
 const basePath = process.env.BASE_PATH ?? "/";
 
-const isReplit = process.env.REPL_ID !== undefined;
-
 function apkMimePlugin() {
   return {
     name: "apk-mime",
@@ -44,21 +42,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
     apkMimePlugin(),
-    ...(isReplit
-      ? [
-          await import("@replit/vite-plugin-runtime-error-modal").then((m) => m.default()),
-          ...(process.env.NODE_ENV !== "production"
-            ? [
-                await import("@replit/vite-plugin-cartographer").then((m) =>
-                  m.cartographer({
-                    root: path.resolve(import.meta.dirname, ".."),
-                  })
-                ),
-                await import("@replit/vite-plugin-dev-banner").then((m) => m.devBanner()),
-              ]
-            : []),
-        ]
-      : []),
   ],
   resolve: {
     alias: {

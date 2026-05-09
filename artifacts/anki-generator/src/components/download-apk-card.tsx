@@ -82,9 +82,6 @@ function pickSlotForHost(
 ): "dev" | "published" {
   if (raw.publishedHost && currentHost === raw.publishedHost) return "published";
   if (raw.devHost && currentHost === raw.devHost) return "dev";
-  // Heuristic: published deployments use *.replit.app, dev uses *.replit.dev / *.pike.replit.dev
-  if (currentHost.endsWith(".replit.app")) return "published";
-  if (currentHost.includes(".replit.dev")) return "dev";
   return "published";
 }
 
@@ -477,7 +474,7 @@ export function DownloadApkCard() {
                   </>
                 ) : (
                   <>
-                    Enter any host code (e.g. <span className="font-mono">my-branch.replit.dev</span>) to build a dev APK pointing at it. Defaults to this site.
+                    Enter any host (e.g. <span className="font-mono">dev.example.com</span>) to build a dev APK pointing at it. Defaults to this site.
                   </>
                 )}
               </p>
@@ -500,7 +497,7 @@ export function DownloadApkCard() {
                 type="text"
                 value={devInput}
                 onChange={(e) => setDevInput(e.target.value)}
-                placeholder="my-branch.replit.dev"
+                placeholder="dev.example.com"
                 className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/40"
                 autoFocus
                 onKeyDown={(e) => { if (e.key === "Enter" && devInput.trim()) submitDevConfigure(); }}
@@ -542,7 +539,7 @@ export function DownloadApkCard() {
                   </>
                 ) : (
                   <>
-                    Set this to your <span className="font-mono">.replit.app</span> URL once
+                    Set your published URL (e.g. <span className="font-mono">app.example.com</span>)
                     so each publish ships an APK pointing at your live site.
                   </>
                 )}
@@ -566,7 +563,7 @@ export function DownloadApkCard() {
                 type="text"
                 value={publishedInput}
                 onChange={(e) => setPublishedInput(e.target.value)}
-                placeholder="myapp.replit.app"
+                placeholder="app.example.com"
                 className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40"
                 autoFocus
               />

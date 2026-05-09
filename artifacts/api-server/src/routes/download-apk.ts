@@ -64,7 +64,7 @@ router.post("/download-apk/configure", (req, res) => {
   let raw = typeof body.host === "string" ? body.host.trim() : "";
   raw = raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/:\d+$/, "");
   if (!isPublicHost(raw)) {
-    res.status(400).json({ error: "Please provide a public hostname like myapp.replit.app" });
+    res.status(400).json({ error: "Please provide a public hostname like app.example.com" });
     return;
   }
   setStoredTargetHost(raw, slot);

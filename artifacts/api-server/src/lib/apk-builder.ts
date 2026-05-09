@@ -393,11 +393,11 @@ export function ensureApkForSlot(slot: Slot, host: string): BuildState {
 }
 
 function devHostFromEnv(): string | null {
-  return getStoredTargetHost("dev") || process.env.REPLIT_DEV_DOMAIN || null;
+  return getStoredTargetHost("dev");
 }
 
 function publishedHostFromEnv(): string | null {
-  return getStoredTargetHost("published") || process.env.REPLIT_DEPLOYMENT_DOMAIN || null;
+  return getStoredTargetHost("published");
 }
 
 export function resolveHostForSlot(slot: Slot): string | null {
@@ -422,7 +422,7 @@ export function autoConfigureFromEnv(): void {
   if (dev) ensureApkForSlot("dev", dev);
   if (published) ensureApkForSlot("published", published);
   if (!dev && !published) {
-    logger.info("No REPLIT_*_DOMAIN set; skipping APK auto-configure");
+    logger.info("No APK target hosts configured; skipping APK auto-configure");
   }
 
   startSourceHashWatcher();

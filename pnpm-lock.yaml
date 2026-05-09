@@ -6,15 +6,6 @@ settings:
 
 catalogs:
   default:
-    '@replit/vite-plugin-cartographer':
-      specifier: ^0.5.1
-      version: 0.5.1
-    '@replit/vite-plugin-dev-banner':
-      specifier: ^0.1.1
-      version: 0.1.2
-    '@replit/vite-plugin-runtime-error-modal':
-      specifier: ^0.0.6
-      version: 0.0.6
     '@tailwindcss/vite':
       specifier: ^4.1.14
       version: 4.2.1
@@ -160,9 +151,6 @@ importers:
       stripe:
         specifier: ^22.1.0
         version: 22.1.0(@types/node@25.3.5)
-      stripe-replit-sync:
-        specifier: ^1.0.0
-        version: 1.0.0(stripe@22.1.0(@types/node@25.3.5))
     devDependencies:
       '@rollup/rollup-linux-arm64-gnu':
         specifier: ^4.60.3
@@ -318,15 +306,6 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.0
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      '@replit/vite-plugin-cartographer':
-        specifier: 'catalog:'
-        version: 0.5.1
-      '@replit/vite-plugin-dev-banner':
-        specifier: 'catalog:'
-        version: 0.1.2
-      '@replit/vite-plugin-runtime-error-modal':
-        specifier: 'catalog:'
-        version: 0.0.6
       '@tailwindcss/typography':
         specifier: ^0.5.15
         version: 0.5.19(tailwindcss@4.2.1)
@@ -489,9 +468,6 @@ importers:
       stripe:
         specifier: ^22.1.0
         version: 22.1.0(@types/node@25.3.5)
-      stripe-replit-sync:
-        specifier: ^1.0.0
-        version: 1.0.0(stripe@22.1.0(@types/node@25.3.5))
       tesseract.js:
         specifier: ^7.0.0
         version: 7.0.0
@@ -623,12 +599,6 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      '@replit/vite-plugin-cartographer':
-        specifier: 'catalog:'
-        version: 0.5.1
-      '@replit/vite-plugin-runtime-error-modal':
-        specifier: 'catalog:'
-        version: 0.0.6
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.2.1(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -779,7 +749,7 @@ importers:
     dependencies:
       openai:
         specifier: ^6.27.0
-        version: 6.33.0(ws@8.20.0)(zod@4.3.6)
+        version: 6.33.0(zod@4.3.6)
       p-limit:
         specifier: ^7.3.0
         version: 7.3.0
@@ -1937,15 +1907,6 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
-  '@replit/vite-plugin-cartographer@0.5.1':
-    resolution: {integrity: sha512-KiaQMx4ssTM8hSjMFscyIV1PN1bRVCWCFqN3fXOfXa39uFFCKUaeL3VvH/sxuy7S7ET+MCFOt+J7lLtL56bRrA==}
-
-  '@replit/vite-plugin-dev-banner@0.1.2':
-    resolution: {integrity: sha512-YfW3U1xKnLrqvSiTzXeEX8AG+Vpz7XwBsJHNvGbp841AE1mLvishMQi2Zw7ApyHp+9EMGthXuCjP+mLbl3IuGA==}
-
-  '@replit/vite-plugin-runtime-error-modal@0.0.6':
-    resolution: {integrity: sha512-53iuzLsrvcUnWxAo0fvNrUhOf7LYJ+3at61dZeTIrkaZD4vGNjTbvE0j50TFcjjTC9UM74uprlnQ4+L2A//Cjg==}
 
   '@rolldown/pluginutils@1.0.0-rc.3':
     resolution: {integrity: sha512-eybk3TjzzzV97Dlj5c+XrBFW57eTNhzod66y9HrBlzJ6NsCrWCp/2kaPS3K9wJmurBC0Tdw4yPjXKZqlznim3Q==}
@@ -3513,9 +3474,6 @@ packages:
   mkdirp-classic@0.5.3:
     resolution: {integrity: sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A==}
 
-  modern-screenshot@4.6.8:
-    resolution: {integrity: sha512-GJkv/yWPOJTlxj1LZDU2k474cDyOWL+LVaqTdDWQwQ5d8zIuTz1892+1cV9V0ZpK6HYZFo/+BNLBbierO9d2TA==}
-
   motion-dom@12.35.1:
     resolution: {integrity: sha512-7n6r7TtNOsH2UFSAXzTkfzOeO5616v9B178qBIjmu/WgEyJK0uqwytCEhwKBTuM/HJA40ptAw7hLFpxtPAMRZQ==}
 
@@ -3707,11 +3665,6 @@ packages:
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
-
-  pg-node-migrations@0.0.8:
-    resolution: {integrity: sha512-44cMl9umOmCv0hzZyEcvjEq8Bm8u7mrzggZ06qXTJVSsMMB4j2OsjG+rSp+uzeKWyP2Vu0K9Ye2wKtjFUJwrdw==}
-    engines: {node: '>10.17.0'}
-    hasBin: true
 
   pg-pool@3.13.0:
     resolution: {integrity: sha512-gB+R+Xud1gLFuRD/QgOIgGOBE2KCQPaPwkzBBGC9oG69pHTkhQeIuejVIk3/cnDyX39av2AxomQiyPT13WKHQA==}
@@ -4170,10 +4123,6 @@ packages:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
 
-  sql-template-strings@2.2.2:
-    resolution: {integrity: sha512-UXhXR2869FQaD+GMly8jAMCRZ94nU5KcrFetZfWEMd+LVVG6y0ExgHAhatEcKZ/wk8YcKPdi+hiD2wm75lq3/Q==}
-    engines: {node: '>=4.0.0'}
-
   sql.js@0.5.0:
     resolution: {integrity: sha512-E80yfgPSOvkbEweROP8kUg+8YfvuWht2RYhPMngkJuKD7IgFVWPP/pAhSAUVZMY9UPf5m10Pi0yW9e4CRnmYGg==}
 
@@ -4220,11 +4169,6 @@ packages:
   strip-json-comments@5.0.3:
     resolution: {integrity: sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw==}
     engines: {node: '>=14.16'}
-
-  stripe-replit-sync@1.0.0:
-    resolution: {integrity: sha512-Bkbih3k+IX/GugN8bKWNpwDiI2xkSLOAR+P34W7pjaR8fXyVay/QqztbrvbHZcU1JlfXncmBhuODY5TYY6DXlw==}
-    peerDependencies:
-      stripe: '> 11'
 
   stripe@22.1.0:
     resolution: {integrity: sha512-w/xHyJGxXWnLPbNHG13sz/fae0MrFGC80Oz7YbICQymbfpqfEcsoG+6yG+9BWb81PWc4rrkeSO4wmTcmefmbLw==}
@@ -4594,18 +4538,6 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.20.0:
-    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
   xml2js@0.6.2:
     resolution: {integrity: sha512-T4rieHaC1EXcES0Kxxj4JWgaUQHDk+qwHcYOCFHfiwKz7tOVPLq7Hjq9dM1WCMhylqMEfP7hMcOIChvotiZegA==}
     engines: {node: '>=4.0.0'}
@@ -4636,9 +4568,6 @@ packages:
 
   yauzl@2.10.0:
     resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
-
-  yesql@7.0.0:
-    resolution: {integrity: sha512-sosfr7agy4ibLM7BvXBkM6BpBmKMGuBO8DUYQEuey+QqaqrgW+2bsSg6D050ocBYIz0PuHxUyehyzEztZTU4pw==}
 
   yocto-queue@1.2.2:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
@@ -5967,22 +5896,6 @@ snapshots:
       '@react-spring/types': 10.0.3
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
-
-  '@replit/vite-plugin-cartographer@0.5.1':
-    dependencies:
-      '@babel/parser': 7.29.0
-      '@babel/traverse': 7.29.0
-      '@babel/types': 7.29.0
-      magic-string: 0.30.21
-      modern-screenshot: 4.6.8
-    transitivePeerDependencies:
-      - supports-color
-
-  '@replit/vite-plugin-dev-banner@0.1.2': {}
-
-  '@replit/vite-plugin-runtime-error-modal@0.0.6':
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
 
   '@rolldown/pluginutils@1.0.0-rc.3': {}
 
@@ -7611,8 +7524,6 @@ snapshots:
 
   mkdirp-classic@0.5.3: {}
 
-  modern-screenshot@4.6.8: {}
-
   motion-dom@12.35.1:
     dependencies:
       motion-utils: 12.29.2
@@ -7699,9 +7610,8 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@6.33.0(ws@8.20.0)(zod@4.3.6):
+  openai@6.33.0(zod@4.3.6):
     optionalDependencies:
-      ws: 8.20.0
       zod: 4.3.6
 
   opencollective-postinstall@2.0.3: {}
@@ -7811,13 +7721,6 @@ snapshots:
   pg-connection-string@2.12.0: {}
 
   pg-int8@1.0.1: {}
-
-  pg-node-migrations@0.0.8:
-    dependencies:
-      pg: 8.20.0
-      sql-template-strings: 2.2.2
-    transitivePeerDependencies:
-      - pg-native
 
   pg-pool@3.13.0(pg@8.20.0):
     dependencies:
@@ -8404,8 +8307,6 @@ snapshots:
 
   split2@4.2.0: {}
 
-  sql-template-strings@2.2.2: {}
-
   sql.js@0.5.0: {}
 
   stackback@0.0.2: {}
@@ -8442,18 +8343,6 @@ snapshots:
   strip-json-comments@2.0.1: {}
 
   strip-json-comments@5.0.3: {}
-
-  stripe-replit-sync@1.0.0(stripe@22.1.0(@types/node@25.3.5)):
-    dependencies:
-      pg: 8.20.0
-      pg-node-migrations: 0.0.8
-      stripe: 22.1.0(@types/node@25.3.5)
-      ws: 8.20.0
-      yesql: 7.0.0
-    transitivePeerDependencies:
-      - bufferutil
-      - pg-native
-      - utf-8-validate
 
   stripe@22.1.0(@types/node@25.3.5):
     optionalDependencies:
@@ -8810,8 +8699,6 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.20.0: {}
-
   xml2js@0.6.2:
     dependencies:
       sax: 1.6.0
@@ -8833,8 +8720,6 @@ snapshots:
     dependencies:
       buffer-crc32: 0.2.13
       fd-slicer: 1.1.0
-
-  yesql@7.0.0: {}
 
   yocto-queue@1.2.2: {}
 
