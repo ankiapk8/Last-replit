@@ -5,9 +5,7 @@ import * as schema from "./schema";
 const { Pool } = pg;
 
 if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
+  throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
 }
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -212,6 +210,42 @@ export async function ensureDatabaseSchema(): Promise<void> {
       "user_id" text,
       "page" text,
       "created_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+
+    -- Server logs table for persistent logging
+    CREATE TABLE IF NOT EXISTS "server_logs" (
+      "id" bigserial PRIMARY KEY NOT NULL,
+      "level" text NOT NULL DEFAULT 'info',
+      "message" text NOT NULL,
+      "endpoint" text,
+      "method" text,
+      "user_id" text,
+      "request_id" text,
+      "ip" text,
+      "status_code" integer,
+      "duration_ms" integer,
+      "metadata" jsonb,
+      "stack" text,
+      "source" text NOT NULL DEFAULT 'db',
+      "created_at" timestamp with time zone DEFAULT now() NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS "idx_server_logs_level" ON "server_logs" ("level");
+    CREATE INDEX IF NOT EXISTS "idx_server_logs_endpoint" ON "server_logs" ("endpoint");
+    CREATE INDEX IF NOT EXISTS "idx_server_logs_created_at" ON "server_logs" ("created_at");
+    CREATE INDEX IF NOT EXISTS "idx_server_logs_request_id" ON "server_logs" ("request_id");
+    CREATE INDEX IF NOT EXISTS "idx_server_logs_user_id" ON "server_logs" ("user_id");
+
+    -- Generation status table (replaces in-memory map)
+    CREATE TABLE IF NOT EXISTS "generation_status" (
+      "id" text PRIMARY KEY NOT NULL,
+      "type" text NOT NULL,
+      "status" text NOT NULL DEFAULT 'running',
+      "user_id" text,
+      "deck_id" integer,
+      "error_message" text,
+      "started_at" timestamp with time zone DEFAULT now() NOT NULL,
+      "completed_at" timestamp with time zone
     );
   `);
 }

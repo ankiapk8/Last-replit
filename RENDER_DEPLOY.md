@@ -5,11 +5,26 @@ AnkiGen (frontend + API + database) as a single web service on Render.com.
 
 ## What gets deployed
 
-- **Web service** (`anki-generator`) — Docker container running the Express API
-  and the built React frontend on a single port (8080).
+- **Web service** (`anki-generator`) — Docker container running the new Express API
+  server (`api-new-server`) and the built React frontend on a single port (8080).
 - **Postgres database** (`anki-generator-db`) — Managed Postgres 16. The
   connection string is injected into the web service automatically as
   `DATABASE_URL`.
+
+## Architecture
+
+The new API server (`api-new-server/`) is a clean rebuild with:
+
+- **Database-backed logging** — All logs saved to PostgreSQL `server_logs` table.
+  Logs persist across restarts and are queryable via `GET /api/logs` (admin only).
+- **File-based log fallback** — When DB is unavailable, logs write to local files.
+- **Consistent error responses** — Every endpoint returns standardized
+  `{ error: { code, message, details, request_id } }` format.
+- **Request correlation** — Every request gets a unique `X-Request-Id` header
+  for tracing through logs.
+- **DB-backed rate limiting & caching** — Survives restarts, works across instances.
+- **Unified AI client** — All AI calls centralized with automatic OpenRouter → Ollama fallback.
+- **Zero frontend changes** — All existing API endpoints preserved exactly.
 
 ## Step-by-step
 
@@ -17,7 +32,7 @@ AnkiGen (frontend + API + database) as a single web service on Render.com.
 
 ```bash
 git add .
-git commit -m "initial deploy"
+git commit -m "rebuild api server with db-backed logging"
 git push origin main
 ```
 
@@ -37,22 +52,16 @@ When prompted, fill in these secret values:
 | Key | Value |
 |-----|-------|
 | `OPENROUTER_API_KEY` | Your OpenRouter key — get one free at [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `OLLAMA_CLOUD_API_KEY` | Your Ollama Cloud key — get one at [ollama.com](https://ollama.com) (enables cross-provider fallback when OpenRouter quota is exceeded) |
+| `OLLAMA_CLOUD_API_KEY` | Your Ollama Cloud key — get one at [ollama.com](https://ollama.com) |
 
-Everything else (`DATABASE_URL`, `PORT`, `STATIC_DIR`, `NODE_ENV`) is pre-configured in `render.yaml`.
-
-> **Important:** Setting `OLLAMA_CLOUD_API_KEY` enables automatic cross-provider fallback.
-> When OpenRouter free-tier quota is exceeded, the app will automatically retry with Ollama Cloud.
-> This prevents the "AI provider quota exceeded" error on Render.
+Everything else (`DATABASE_URL`, `PORT`, `STATIC_DIR`, `NODE_ENV`, logging config)
+is pre-configured in `render.yaml`.
 
 ### 4. Wait for the first build
 
 The first build takes **5–10 minutes** because Docker has to compile the
 `canvas` native module from source. Subsequent deploys are faster due to
 layer caching.
-
-Once the build completes, your app will be live at
-`https://anki-generator.onrender.com` (or a custom domain if configured).
 
 ---
 
@@ -63,28 +72,12 @@ Once the build completes, your app will be live at
 | `DATABASE_URL` | Render Postgres (auto-injected) | Wired by `render.yaml` |
 | `OPENROUTER_API_KEY` | **You provide at deploy time** | Real OpenRouter key (`sk-or-...`) |
 | `OLLAMA_CLOUD_API_KEY` | **You provide at deploy time** | Ollama Cloud key for cross-provider fallback |
-| `OLLAMA_CLOUD_BASE_URL` | Set in `render.yaml` | `https://ollama.com/api` |
 | `PORT` | Set in `render.yaml` | `8080` — do not change |
 | `STATIC_DIR` | Set in `render.yaml` | `/app/public` — do not change |
 | `NODE_ENV` | Set in `render.yaml` | `production` |
-
----
-
-## Automatic deploys
-
-`render.yaml` sets `autoDeploy: true`. Every push to your default branch
-triggers a new build and rolling deploy with zero downtime.
-
-To disable: set `autoDeploy: false` in `render.yaml` or toggle it in the
-Render dashboard under **Settings → Deploy**.
-
----
-
-## Updating environment variables after deploy
-
-1. Go to your service in the Render dashboard
-2. **Environment** tab → add or edit variables
-3. Click **Save changes** — Render redeploys automatically
+| `LOG_LEVEL` | Set in `render.yaml` | `info` — controls minimum log level |
+| `LOG_TO_FILE` | Set in `render.yaml` | `true` — enables file-based log fallback |
+| `LOG_RETENTION_DAYS` | Set in `render.yaml` | `30` — auto-delete logs older than N days |
 
 ---
 
@@ -99,6 +92,30 @@ restart the instance.
 
 ---
 
+## Viewing logs
+
+### In the database (recommended for production)
+
+The new API server saves all logs to the `server_logs` table. Admins can query:
+
+```
+GET /api/logs?level=error&limit=50&since=24h
+```
+
+This requires admin/moderator authentication.
+
+### In Render dashboard
+
+Standard stdout/stderr logs are available in the Render dashboard under
+**Logs** for the web service.
+
+### Log file fallback
+
+When the database is unavailable, logs are written to local files at
+`/app/api-new-server/logs/server.log` (rotating, max 10MB per file).
+
+---
+
 ## Local Docker test before pushing
 
 ```bash
@@ -108,7 +125,6 @@ docker build -t ankigen .
 # Run with your real keys
 docker run --rm -p 8080:8080 \
   -e DATABASE_URL="postgres://user:pw@host:5432/db" \
-  -e AI_INTEGRATIONS_OPENAI_BASE_URL="https://openrouter.ai/api/v1" \
   -e OPENROUTER_API_KEY="sk-or-..." \
   ankigen
 
@@ -123,10 +139,10 @@ Open http://localhost:8080 to confirm everything works before pushing to GitHub.
 
 ## Notes
 
-- The Android APK builder requires the Android SDK at `/home/runner/android-sdk`
-  and only works in the Replit dev environment. On Render, it logs a warning
-  and the rest of the app is unaffected.
 - Database migrations run automatically on every startup via
-  `ensureDatabaseSchema()` — no separate migration step needed.
+  `ensureDatabaseSchema()` — no separate migration step needed. The new
+  `server_logs` and `generation_status` tables are created automatically.
 - The app is stateless except for the database; you can scale horizontally
   by adding more Render instances pointing at the same `DATABASE_URL`.
+- The new API server is fully compatible with the existing frontend — zero
+  frontend code changes required.

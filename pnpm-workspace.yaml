@@ -1,5 +1,6 @@
 packages:
   - artifacts/*
+  - api-new-server
   - lib/*
   - lib/integrations/*
   - scripts

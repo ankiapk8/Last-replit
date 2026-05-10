@@ -1,0 +1,46 @@
+import { Router, type IRouter } from "express";
+import { authMiddleware } from "../middlewares/authMiddleware";
+import healthRouter from "./health";
+import authRouter from "./auth";
+import decksRouter from "./decks";
+import cardsRouter from "./cards";
+import generateRouter from "./generate";
+import extractPdfRouter from "./extract-pdf";
+import extractOfficeRouter from "./extract-office";
+import explainRouter from "./explain";
+import mindMapRouter from "./mind-map";
+import qbanksRouter from "./qbanks";
+import deckMindMapsRouter from "./deck-mind-maps";
+import feedbackRouter from "./feedback";
+import topicsRouter from "./topics";
+import generationsRouter from "./generations";
+import transferRouter from "./transfer";
+import subscriptionRouter from "./subscription";
+import adminRouter from "./admin";
+import devRouter from "./dev";
+import logsRouter from "./logs";
+
+const router: IRouter = Router();
+
+router.use(authMiddleware);
+router.use(healthRouter);
+router.use(authRouter);
+router.use(subscriptionRouter);
+router.use(decksRouter);
+router.use(cardsRouter);
+router.use(generateRouter);
+router.use(extractPdfRouter);
+router.use(extractOfficeRouter);
+router.use(explainRouter);
+router.use(mindMapRouter);
+router.use(qbanksRouter);
+router.use(deckMindMapsRouter);
+router.use(feedbackRouter);
+router.use(topicsRouter);
+router.use(generationsRouter);
+router.use(transferRouter);
+router.use(adminRouter);
+router.use(devRouter);
+router.use(logsRouter);
+
+export default router;

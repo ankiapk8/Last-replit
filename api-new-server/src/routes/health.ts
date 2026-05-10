@@ -1,4 +1,4 @@
-start import { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { getMonitorSnapshot } from "../lib/monitor";
@@ -9,6 +9,7 @@ import {
   VISUAL_DETECTION_MODEL,
   MODEL_SUMMARY,
 } from "../lib/models";
+import { sendError } from "../lib/error-handler";
 
 const router: IRouter = Router();
 
@@ -48,16 +49,6 @@ async function checkAiProvider(): Promise<CheckResult> {
     process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
 
   if (hasEnvKey) {
-    const baseUrl =
-      process.env["OPENROUTER_BASE_URL"] ||
-      process.env["OLLAMA_CLOUD_BASE_URL"] ||
-      process.env["AI_INTEGRATIONS_OPENAI_BASE_URL"] ||
-      "https://openrouter.ai/api/v1";
-    try {
-      new URL(baseUrl);
-    } catch {
-      return { status: "fail", message: `Invalid AI base URL: ${baseUrl}` };
-    }
     const providers: string[] = [];
     if (hasOpenRouter) providers.push("openrouter");
     if (hasOllamaCloud) providers.push("ollama-cloud");
@@ -74,18 +65,13 @@ async function checkAiProvider(): Promise<CheckResult> {
     if (isConfigured) {
       return { status: "ok", message: "configured via @workspace/integrations-openai-ai-server" };
     }
-    return {
-      status: "fail",
-      message:
-        "AI provider is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY.",
-    };
   } catch {
-    return {
-      status: "fail",
-      message:
-        "AI provider is not configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY.",
-    };
+    // fall through
   }
+  return {
+    status: "fail",
+    message: "AI provider is not configured. Set OPENROUTER_API_KEY or OLLAMA_CLOUD_API_KEY.",
+  };
 }
 
 router.get("/model-info", (_req, res) => {
@@ -102,18 +88,12 @@ router.get("/model-info", (_req, res) => {
   });
 });
 
-/**
- * POST /api/test-model — Quick smoke test for a specific model.
- * Body: { model: string, prompt?: string }
- * Returns the AI response or error details.
- */
 router.post("/test-model", async (req, res): Promise<void> => {
   const { model, prompt = "Reply with OK" } = req.body as { model?: string; prompt?: string };
   if (!model) {
-    res.status(400).json({ error: "model is required" });
+    res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "model is required" } });
     return;
   }
-
   try {
     const { openai } = await import("@workspace/integrations-openai-ai-server");
     const start = Date.now();
@@ -135,7 +115,6 @@ router.post("/test-model", async (req, res): Promise<void> => {
 
 router.get("/healthz", async (_req, res) => {
   const [database, ai] = await Promise.all([checkDatabase(), checkAiProvider()]);
-
   const allOk = database.status === "ok" && ai.status === "ok";
   const status: "ok" | "degraded" = allOk ? "ok" : "degraded";
 
@@ -145,20 +124,12 @@ router.get("/healthz", async (_req, res) => {
 
   res.status(allOk ? 200 : 503).json({
     status,
-    checks: {
-      database,
-      ai,
-    },
+    checks: { database, ai },
     uptimeSeconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   });
 });
 
-/**
- * GET /api/monitor — Comprehensive server health dashboard.
- * Returns memory usage, error log, generation status, request metrics,
- * AI call stats, cache stats, and overall health status.
- */
 router.get("/monitor", (_req, res) => {
   const snapshot = getMonitorSnapshot();
   const httpStatus =

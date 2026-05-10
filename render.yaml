@@ -39,6 +39,13 @@ services:
       # OpenAI-compatible base URL for image generation client
       - key: AI_INTEGRATIONS_OPENAI_BASE_URL
         value: https://ollama.com/v1
+      # Logging
+      - key: LOG_LEVEL
+        value: info
+      - key: LOG_TO_FILE
+        value: "true"
+      - key: LOG_RETENTION_DAYS
+        value: "30"
 
 databases:
   - name: anki-generator-db

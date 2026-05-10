@@ -1,0 +1,84 @@
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import pinoHttp from "pino-http";
+import path from "node:path";
+import fs from "node:fs";
+import router from "./routes";
+import { logger } from "./lib/logger";
+import { requestContextMiddleware } from "./lib/request-context";
+import { requestLogMiddleware } from "./middlewares/requestLogMiddleware";
+import { globalErrorHandler } from "./lib/error-handler";
+import { WebhookHandlers } from "./webhookHandlers";
+
+const app: Express = express();
+
+// Stripe webhook route BEFORE body-parsing middleware (needs raw Buffer)
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req: Request, res: Response) => {
+    const signature = req.headers["stripe-signature"];
+    if (!signature) {
+      res
+        .status(400)
+        .json({ error: { code: "VALIDATION_ERROR", message: "Missing stripe-signature header" } });
+      return;
+    }
+    try {
+      const sig = Array.isArray(signature) ? signature[0] : signature;
+      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      res.status(200).json({ received: true });
+    } catch (err: any) {
+      logger.error({ err }, "Stripe webhook error");
+      res
+        .status(400)
+        .json({ error: { code: "INTERNAL_ERROR", message: "Webhook processing error" } });
+    }
+  }
+);
+
+app.use(cookieParser());
+app.use(pinoHttp({ logger }));
+app.use(cors());
+app.use(express.json({ limit: "200mb" }));
+app.use(express.urlencoded({ extended: true, limit: "200mb" }));
+
+// Request context (ID + timing) — before routes
+app.use(requestContextMiddleware);
+app.use(requestLogMiddleware);
+
+app.use("/api", router);
+
+// Static frontend serving
+const staticDir = process.env.STATIC_DIR ?? path.resolve(process.cwd(), "public");
+if (fs.existsSync(staticDir)) {
+  logger.info({ staticDir }, "Serving static frontend");
+  app.use(
+    express.static(staticDir, {
+      index: false,
+      maxAge: "1y",
+      immutable: true,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    })
+  );
+  app.get(/^(?!\/api\/).*/, (_req: Request, res: Response, next: NextFunction) => {
+    const indexPath = path.join(staticDir, "index.html");
+    if (!fs.existsSync(indexPath)) {
+      next();
+      return;
+    }
+    res.sendFile(indexPath);
+  });
+}
+
+// Global error handler — must be last
+app.use(globalErrorHandler);
+
+export default app;

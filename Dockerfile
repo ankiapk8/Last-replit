@@ -35,7 +35,7 @@ COPY lib/integrations-openai-ai-react/package.json  ./lib/integrations-openai-ai
 COPY lib/integrations-openai-ai-server/package.json ./lib/integrations-openai-ai-server/
 
 COPY artifacts/anki-generator/package.json   ./artifacts/anki-generator/
-COPY artifacts/api-server/package.json       ./artifacts/api-server/
+COPY api-new-server/package.json             ./api-new-server/
 COPY artifacts/mockup-sandbox/package.json   ./artifacts/mockup-sandbox/
 
 RUN pnpm install --frozen-lockfile=true || pnpm install --frozen-lockfile=false
@@ -52,7 +52,7 @@ ENV PORT=8080
 
 RUN pnpm --filter @workspace/api-spec run codegen || true
 RUN pnpm --filter @workspace/anki-generator run build
-RUN pnpm --filter @workspace/api-server run build
+RUN pnpm --filter @workspace/api-new-server run build
 
 
 # ─── Production runner ─────────────────────────────────────────────────────────
@@ -69,11 +69,11 @@ WORKDIR /app
 
 COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/.npmrc ./
 COPY --from=build /app/lib ./lib
-COPY --from=build /app/artifacts/api-server/package.json ./artifacts/api-server/
-COPY --from=build /app/artifacts/api-server/dist          ./artifacts/api-server/dist
+COPY --from=build /app/api-new-server/package.json ./api-new-server/
+COPY --from=build /app/api-new-server/dist          ./api-new-server/dist
 COPY --from=build /app/artifacts/anki-generator/dist/public ./public
 
-RUN pnpm install --prod --frozen-lockfile=true --filter @workspace/api-server... 2>/dev/null || pnpm install --prod --frozen-lockfile=false --filter @workspace/api-server... \
+RUN pnpm install --prod --frozen-lockfile=true --filter @workspace/api-new-server... 2>/dev/null || pnpm install --prod --frozen-lockfile=false --filter @workspace/api-new-server... \
     && pnpm store prune
 
 EXPOSE 8080
@@ -81,6 +81,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:8080/api/healthz || exit 1
 
-WORKDIR /app/artifacts/api-server
+WORKDIR /app/api-new-server
 
 CMD ["node", "--enable-source-maps", "./dist/index.mjs"]
