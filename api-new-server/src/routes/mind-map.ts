@@ -32,6 +32,7 @@ router.post("/mind-map", async (req, res): Promise<void> => {
   }
 
   if (
+    !process.env.GROQ_API_KEY &&
     !process.env.OPENROUTER_API_KEY &&
     !process.env.OLLAMA_CLOUD_API_KEY &&
     !process.env.OPENAI_API_KEY1 &&
@@ -43,7 +44,7 @@ router.post("/mind-map", async (req, res): Promise<void> => {
       .json({
         error: {
           code: "SERVICE_UNAVAILABLE",
-          message: "AI is not configured. Set OPENROUTER_API_KEY or OLLAMA_CLOUD_API_KEY.",
+          message: "AI is not configured. Set GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY.",
         },
       });
     return;
@@ -106,7 +107,7 @@ Rules:
       status === 404
         ? `AI model '${MINDMAP_MODEL}' not found. Check your model name in .env.`
         : /ECONNREFUSED|connect|connection|network|fetch failed/i.test(message)
-          ? "Cannot connect to AI provider. Check your internet connection and OPENROUTER_BASE_URL."
+          ? "Cannot connect to AI provider. Check your internet connection and AI provider base URL."
           : `Mind map generation failed: ${message}`;
     res.status(503).json({ error: { code: "AI_ERROR", message: friendly } });
   }

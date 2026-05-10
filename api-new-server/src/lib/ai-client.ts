@@ -1,5 +1,5 @@
 /**
- * Unified AI client — OpenRouter (primary) with Ollama Cloud fallback.
+ * Unified AI client — Groq (primary) with OpenRouter/Ollama Cloud fallback.
  * All AI calls go through this module. No route file should import AI SDKs directly.
  */
 
@@ -54,12 +54,15 @@ async function createAIClient() {
 export async function getAIClient(): Promise<AIClientBundle> {
   if (!cachedClient) {
     cachedClient = await createAIClient();
+    const groqKey = process.env.GROQ_API_KEY?.trim();
     const orKey = process.env.OPENROUTER_API_KEY?.trim();
-    const provider = orKey
-      ? "openrouter"
-      : process.env.OLLAMA_CLOUD_API_KEY
-        ? "ollama-cloud"
-        : "openai";
+    const provider = groqKey
+      ? "groq"
+      : orKey
+        ? "openrouter"
+        : process.env.OLLAMA_CLOUD_API_KEY
+          ? "ollama-cloud"
+          : "openai";
     logger.info({ provider }, "AI client initialized");
   }
   return cachedClient;

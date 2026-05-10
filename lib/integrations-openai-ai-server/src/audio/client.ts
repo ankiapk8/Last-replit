@@ -6,31 +6,53 @@ import { randomUUID } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 
-const apiKey =
-  process.env.OPENROUTER_API_KEY ||
-  process.env.OPENAI_API_KEY1 ||
-  process.env.OPENAI_API_KEY ||
-  process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+/**
+ * Provider priority (matches client.ts):
+ *  1. GROQ_API_KEY               → Groq (primary — https://api.groq.com/openai/v1)
+ *  2. OPENROUTER_API_KEY         → OpenRouter (fallback)
+ *  3. OLLAMA_CLOUD_API_KEY       → Ollama Cloud (fallback)
+ *  4. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
+ *  5. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
+ */
+const groqKey = process.env.GROQ_API_KEY?.trim() || null;
+const openRouterKey = process.env.OPENROUTER_API_KEY?.trim() || null;
+const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim() || null;
+
+const apiKey = groqKey
+  ? groqKey
+  : openRouterKey
+    ? openRouterKey
+    : ollamaCloudKey
+      ? ollamaCloudKey
+      : process.env.OPENAI_API_KEY1 ||
+        process.env.OPENAI_API_KEY ||
+        process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 
 if (!apiKey) {
   throw new Error(
-    "OPENROUTER_API_KEY must be set. Get one at https://openrouter.ai/keys",
+    "No AI provider API key set. Set GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY."
   );
 }
 
-const baseURL =
-  process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ||
-  process.env.OPENROUTER_BASE_URL ||
-  "https://openrouter.ai/api/v1";
+const baseURL = groqKey
+  ? process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
+  : openRouterKey
+    ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
+    : ollamaCloudKey
+      ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
+      : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.groq.com/openai/v1";
+
+const defaultHeaders = openRouterKey
+  ? {
+      "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
+      "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
+    }
+  : undefined;
 
 export const openai = new OpenAI({
   apiKey,
   baseURL,
-  defaultHeaders: {
-    "HTTP-Referer":
-      process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
-    "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
-  },
+  ...(defaultHeaders ? { defaultHeaders } : {}),
 });
 
 export type AudioFormat = "wav" | "mp3" | "webm" | "mp4" | "ogg" | "unknown";
@@ -80,12 +102,17 @@ export async function convertToWav(audioBuffer: Buffer): Promise<Buffer> {
 
     await new Promise<void>((resolve, reject) => {
       const ffmpeg = spawn("ffmpeg", [
-        "-i", inputPath,
+        "-i",
+        inputPath,
         "-vn",
-        "-f", "wav",
-        "-ar", "16000",
-        "-ac", "1",
-        "-acodec", "pcm_s16le",
+        "-f",
+        "wav",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-acodec",
+        "pcm_s16le",
         "-y",
         outputPath,
       ]);
@@ -130,12 +157,12 @@ export async function voiceChat(
     model: "gpt-audio",
     modalities: ["text", "audio"],
     audio: { voice, format: outputFormat },
-    messages: [{
-      role: "user",
-      content: [
-        { type: "input_audio", input_audio: { data: audioBase64, format: inputFormat } },
-      ],
-    }],
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "input_audio", input_audio: { data: audioBase64, format: inputFormat } }],
+      },
+    ],
   });
   const message = response.choices[0]?.message as any;
   const transcript = message?.audio?.transcript || message?.content || "";
@@ -157,12 +184,12 @@ export async function voiceChatStream(
     model: "gpt-audio",
     modalities: ["text", "audio"],
     audio: { voice, format: "pcm16" },
-    messages: [{
-      role: "user",
-      content: [
-        { type: "input_audio", input_audio: { data: audioBase64, format: inputFormat } },
-      ],
-    }],
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "input_audio", input_audio: { data: audioBase64, format: inputFormat } }],
+      },
+    ],
     stream: true,
   });
 

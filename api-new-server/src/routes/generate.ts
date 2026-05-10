@@ -163,15 +163,15 @@ function friendlyAiError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   const status = (err as { status?: number }).status;
   if (status === 401 || /user not found|invalid.*key|unauthorized/i.test(message))
-    return "AI authentication failed. Check your OPENROUTER_API_KEY or OLLAMA_CLOUD_API_KEY in .env.";
+    return "AI authentication failed. Check your GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY in .env.";
   if (status === 404) return `AI model not found. Check your model name in .env.`;
   if (/quota|rate.?limit|insufficient|payment|billing/i.test(message))
-    return "AI provider quota exceeded. Check your OpenRouter or Ollama Cloud account.";
+    return "AI provider quota exceeded. Check your Groq, OpenRouter, or Ollama Cloud account.";
   if (/context length|maximum context|too many tokens/i.test(message))
     return "Content is too long for this AI model. Try shorter text or fewer pages.";
   if (/not configured|api key/i.test(message)) return message;
   if (/ECONNREFUSED|connect|connection|network|fetch failed/i.test(message))
-    return "Cannot connect to AI provider. Check your internet connection and OPENROUTER_BASE_URL.";
+    return "Cannot connect to AI provider. Check your internet connection and AI provider base URL.";
   return `Generation failed: ${message}`;
 }
 
@@ -180,11 +180,9 @@ function friendlyAiError(err: unknown): string {
 router.post("/generate/stream", async (req: Request, res: Response): Promise<void> => {
   const ip = req.ip ?? "unknown";
   if (!generateRateLimiter(ip)) {
-    res
-      .status(429)
-      .json({
-        error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
-      });
+    res.status(429).json({
+      error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
+    });
     return;
   }
 
@@ -334,11 +332,9 @@ router.get("/generate/status/:id", async (req: Request, res: Response): Promise<
 router.post("/generate-qbank/stream", async (req: Request, res: Response): Promise<void> => {
   const ip = req.ip ?? "unknown";
   if (!generateRateLimiter(ip)) {
-    res
-      .status(429)
-      .json({
-        error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
-      });
+    res.status(429).json({
+      error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
+    });
     return;
   }
 

@@ -2,28 +2,34 @@ import OpenAI from "openai";
 
 /**
  * Provider priority:
- *  1. OPENROUTER_API_KEY        → OpenRouter (primary — best intelligence, free tier)
- *  2. OLLAMA_CLOUD_API_KEY      → Ollama Cloud (fallback — preserved models)
- *  3. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
- *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
+ *  1. GROQ_API_KEY               → Groq (primary — https://api.groq.com/openai/v1)
+ *  2. OPENROUTER_API_KEY         → OpenRouter (fallback)
+ *  3. OLLAMA_CLOUD_API_KEY       → Ollama Cloud (fallback)
+ *  4. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
+ *  5. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
  */
+const groqKey = process.env.GROQ_API_KEY?.trim() || null;
 const openRouterKey = process.env.OPENROUTER_API_KEY?.trim() || null;
 const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim() || null;
 
-// Primary client: OpenRouter if key exists, else Ollama Cloud, else OpenAI/Replit
-const apiKey = openRouterKey
-  ? openRouterKey
-  : ollamaCloudKey
-    ? ollamaCloudKey
-    : (process.env.OPENAI_API_KEY1 ??
-      process.env.OPENAI_API_KEY ??
-      process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
+// Primary client: Groq if key exists, else OpenRouter, else Ollama Cloud, else OpenAI/Replit
+const apiKey = groqKey
+  ? groqKey
+  : openRouterKey
+    ? openRouterKey
+    : ollamaCloudKey
+      ? ollamaCloudKey
+      : (process.env.OPENAI_API_KEY1 ??
+        process.env.OPENAI_API_KEY ??
+        process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
 
-const baseURL = openRouterKey
-  ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
-  : ollamaCloudKey
-    ? process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/api"
-    : (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1");
+const baseURL = groqKey
+  ? process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
+  : openRouterKey
+    ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
+    : ollamaCloudKey
+      ? process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/api"
+      : (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://api.groq.com/openai/v1");
 
 export const isConfigured = !!apiKey;
 
@@ -43,28 +49,30 @@ export const openai = new OpenAI({
 
 if (!apiKey) {
   console.warn(
-    "[integrations-openai] No API key found. Set OPENROUTER_API_KEY for OpenRouter, or OLLAMA_CLOUD_API_KEY / OPENAI_API_KEY. Requests will fail."
+    "[integrations-openai] No API key found. Set GROQ_API_KEY for Groq, or OPENROUTER_API_KEY / OLLAMA_CLOUD_API_KEY / OPENAI_API_KEY. Requests will fail."
   );
 } else {
-  const keySource = openRouterKey
-    ? "OPENROUTER_API_KEY"
-    : ollamaCloudKey
-      ? "OLLAMA_CLOUD_API_KEY"
-      : process.env.OPENAI_API_KEY1
-        ? "OPENAI_API_KEY1"
-        : process.env.OPENAI_API_KEY
-          ? "OPENAI_API_KEY"
-          : "AI_INTEGRATIONS_OPENAI_API_KEY";
-  const providerName = openRouterKey ? "openrouter" : ollamaCloudKey ? "ollama-cloud" : "openai";
+  const keySource = groqKey
+    ? "GROQ_API_KEY"
+    : openRouterKey
+      ? "OPENROUTER_API_KEY"
+      : ollamaCloudKey
+        ? "OLLAMA_CLOUD_API_KEY"
+        : process.env.OPENAI_API_KEY1
+          ? "OPENAI_API_KEY1"
+          : process.env.OPENAI_API_KEY
+            ? "OPENAI_API_KEY"
+            : "AI_INTEGRATIONS_OPENAI_API_KEY";
+  const providerName = groqKey ? "groq" : openRouterKey ? "openrouter" : ollamaCloudKey ? "ollama-cloud" : "openai";
   console.log(
     `[integrations-openai] Initialized — provider=${providerName}, baseURL=${baseURL}, keySource=${keySource}`
   );
-  const hasFallback = !!(openRouterKey && ollamaCloudKey);
+  const hasFallback = !!(groqKey && (openRouterKey || ollamaCloudKey)) || !!(openRouterKey && ollamaCloudKey);
   console.log(`[integrations-openai] Cross-provider fallback available: ${hasFallback}`);
 }
 
-/** Fallback model — Ollama Cloud text model (used when OpenRouter is primary) */
-export const FALLBACK_MODEL = "qwen3-coder:480b";
+/** Fallback model — used when primary provider fails */
+export const FALLBACK_MODEL = "openai/gpt-oss-120b";
 
 /**
  * Fallback client using a secondary provider.
@@ -72,6 +80,31 @@ export const FALLBACK_MODEL = "qwen3-coder:480b";
  * Returns null if no fallback key is available.
  */
 export function getFallbackOpenAI(): OpenAI | null {
+  // If primary is Groq, try OpenRouter or Ollama Cloud as fallback
+  if (groqKey) {
+    if (openRouterKey) {
+      const fallbackBase = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+      console.log(`[integrations-openai] Fallback client: OpenRouter at ${fallbackBase}`);
+      return new OpenAI({
+        apiKey: openRouterKey,
+        baseURL: fallbackBase,
+        defaultHeaders: {
+          "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER || "https://anki-generator.local",
+          "X-Title": process.env.OPENROUTER_APP_TITLE || "Anki Card Generator",
+        },
+      });
+    }
+    if (ollamaCloudKey) {
+      const fallbackBase = process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/api";
+      console.log(`[integrations-openai] Fallback client: Ollama Cloud at ${fallbackBase}`);
+      return new OpenAI({
+        apiKey: ollamaCloudKey,
+        baseURL: fallbackBase,
+      });
+    }
+    return null;
+  }
+
   // If primary is OpenRouter, try Ollama Cloud as fallback
   if (openRouterKey && ollamaCloudKey) {
     const fallbackBase = process.env.OLLAMA_CLOUD_BASE_URL || "https://ollama.com/api";

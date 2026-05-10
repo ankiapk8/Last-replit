@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 const ORIGINAL_ENV: Record<string, string | undefined> = { ...process.env };
 
 function clearAllApiKeys() {
+  delete process.env.GROQ_API_KEY;
   delete process.env.OLLAMA_CLOUD_API_KEY;
   delete process.env.OPENROUTER_API_KEY;
   delete process.env.OPENAI_API_KEY;
@@ -30,6 +31,14 @@ describe("client.ts — provider detection", () => {
     expect(mod.isConfigured).toBe(false);
   });
 
+  it("isConfigured is true when GROQ_API_KEY is set", async () => {
+    vi.resetModules();
+    clearAllApiKeys();
+    process.env.GROQ_API_KEY = "test-key";
+    const mod = await import("./client");
+    expect(mod.isConfigured).toBe(true);
+  });
+
   it("isConfigured is true when OLLAMA_CLOUD_API_KEY is set", async () => {
     vi.resetModules();
     clearAllApiKeys();
@@ -54,10 +63,10 @@ describe("client.ts — provider detection", () => {
     expect(mod.isConfigured).toBe(true);
   });
 
-  it("FALLBACK_MODEL is qwen3-coder:480b (Ollama Cloud text model)", async () => {
+  it("FALLBACK_MODEL is openai/gpt-oss-120b", async () => {
     vi.resetModules();
     const mod = await import("./client");
-    expect(mod.FALLBACK_MODEL).toBe("qwen3-coder:480b");
+    expect(mod.FALLBACK_MODEL).toBe("openai/gpt-oss-120b");
   });
 });
 
@@ -65,6 +74,26 @@ describe("client.ts — getFallbackOpenAI", () => {
   afterEach(() => {
     vi.resetModules();
     restoreEnv;
+  });
+
+  it("returns OpenRouter client when primary is Groq and OpenRouter key exists", async () => {
+    vi.resetModules();
+    clearAllApiKeys();
+    process.env.GROQ_API_KEY = "groq-key";
+    process.env.OPENROUTER_API_KEY = "or-key";
+    const mod = await import("./client");
+    const fallback = mod.getFallbackOpenAI();
+    expect(fallback).not.toBeNull();
+  });
+
+  it("returns Ollama Cloud client when primary is Groq and only Ollama key exists", async () => {
+    vi.resetModules();
+    clearAllApiKeys();
+    process.env.GROQ_API_KEY = "groq-key";
+    process.env.OLLAMA_CLOUD_API_KEY = "ollama-key";
+    const mod = await import("./client");
+    const fallback = mod.getFallbackOpenAI();
+    expect(fallback).not.toBeNull();
   });
 
   it("returns Ollama Cloud client when primary is OpenRouter and Ollama key exists", async () => {
@@ -75,6 +104,15 @@ describe("client.ts — getFallbackOpenAI", () => {
     const mod = await import("./client");
     const fallback = mod.getFallbackOpenAI();
     expect(fallback).not.toBeNull();
+  });
+
+  it("returns null when only Groq key is set (no fallback provider)", async () => {
+    vi.resetModules();
+    clearAllApiKeys();
+    process.env.GROQ_API_KEY = "groq-key";
+    const mod = await import("./client");
+    const fallback = mod.getFallbackOpenAI();
+    expect(fallback).toBeNull();
   });
 
   it("returns null when only OpenRouter key is set (no fallback provider)", async () => {
@@ -89,15 +127,6 @@ describe("client.ts — getFallbackOpenAI", () => {
   it("returns null when no keys are set", async () => {
     vi.resetModules();
     clearAllApiKeys();
-    const mod = await import("./client");
-    const fallback = mod.getFallbackOpenAI();
-    expect(fallback).toBeNull();
-  });
-
-  it("returns null when primary is OpenRouter without Ollama (no .env fallback)", async () => {
-    vi.resetModules();
-    clearAllApiKeys();
-    process.env.OPENROUTER_API_KEY = "or-key";
     const mod = await import("./client");
     const fallback = mod.getFallbackOpenAI();
     expect(fallback).toBeNull();

@@ -4,33 +4,39 @@ import { Buffer } from "node:buffer";
 
 /**
  * Provider priority (matches client.ts):
- *  1. OPENROUTER_API_KEY        → OpenRouter (primary)
- *  2. OLLAMA_CLOUD_API_KEY      → Ollama Cloud (fallback)
- *  3. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
- *  4. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
+ *  1. GROQ_API_KEY               → Groq (primary — https://api.groq.com/openai/v1)
+ *  2. OPENROUTER_API_KEY         → OpenRouter (fallback)
+ *  3. OLLAMA_CLOUD_API_KEY       → Ollama Cloud (fallback)
+ *  4. OPENAI_API_KEY / OPENAI_API_KEY1 → OpenAI
+ *  5. AI_INTEGRATIONS_OPENAI_API_KEY → Replit injected key
  */
+const groqKey = process.env.GROQ_API_KEY?.trim() || null;
 const openRouterKey = process.env.OPENROUTER_API_KEY?.trim() || null;
 const ollamaCloudKey = process.env.OLLAMA_CLOUD_API_KEY?.trim() || null;
 
-const apiKey = openRouterKey
-  ? openRouterKey
-  : ollamaCloudKey
-    ? ollamaCloudKey
-    : (process.env.OPENAI_API_KEY1 ??
-      process.env.OPENAI_API_KEY ??
-      process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
+const apiKey = groqKey
+  ? groqKey
+  : openRouterKey
+    ? openRouterKey
+    : ollamaCloudKey
+      ? ollamaCloudKey
+      : (process.env.OPENAI_API_KEY1 ??
+        process.env.OPENAI_API_KEY ??
+        process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
 
 if (!apiKey) {
   throw new Error(
-    "No AI provider configured. Set OPENROUTER_API_KEY for OpenRouter, or set OLLAMA_CLOUD_API_KEY."
+    "No AI provider configured. Set GROQ_API_KEY for Groq, or set OPENROUTER_API_KEY / OLLAMA_CLOUD_API_KEY."
   );
 }
 
-const baseURL = openRouterKey
-  ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
-  : ollamaCloudKey
-    ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
-    : (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1");
+const baseURL = groqKey
+  ? process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
+  : openRouterKey
+    ? process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
+    : ollamaCloudKey
+      ? process.env.OLLAMA_CLOUD_BASE_URL || "https://cloud.ollama.com/v1"
+      : (process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://api.groq.com/openai/v1");
 
 const defaultHeaders = openRouterKey
   ? {

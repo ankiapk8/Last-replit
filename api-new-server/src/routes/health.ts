@@ -39,9 +39,11 @@ async function checkDatabase(): Promise<CheckResult> {
 }
 
 async function checkAiProvider(): Promise<CheckResult> {
+  const hasGroq = !!process.env["GROQ_API_KEY"];
   const hasOpenRouter = !!process.env["OPENROUTER_API_KEY"];
   const hasOllamaCloud = !!process.env["OLLAMA_CLOUD_API_KEY"];
   const hasEnvKey =
+    hasGroq ||
     hasOpenRouter ||
     hasOllamaCloud ||
     process.env["OPENAI_API_KEY1"] ||
@@ -50,11 +52,13 @@ async function checkAiProvider(): Promise<CheckResult> {
 
   if (hasEnvKey) {
     const providers: string[] = [];
+    if (hasGroq) providers.push("groq");
     if (hasOpenRouter) providers.push("openrouter");
     if (hasOllamaCloud) providers.push("ollama-cloud");
     if (process.env["OPENAI_API_KEY1"] || process.env["OPENAI_API_KEY"]) providers.push("openai");
     const fallback =
-      hasOpenRouter && hasOllamaCloud
+      (hasGroq && (hasOpenRouter || hasOllamaCloud)) ||
+      (hasOpenRouter && hasOllamaCloud)
         ? "cross-provider fallback available"
         : "no cross-provider fallback";
     return { status: "ok", message: `providers: ${providers.join(", ")} (${fallback})` };
@@ -70,7 +74,7 @@ async function checkAiProvider(): Promise<CheckResult> {
   }
   return {
     status: "fail",
-    message: "AI provider is not configured. Set OPENROUTER_API_KEY or OLLAMA_CLOUD_API_KEY.",
+    message: "AI provider is not configured. Set GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY.",
   };
 }
 
