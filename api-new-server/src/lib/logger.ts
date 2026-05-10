@@ -34,7 +34,7 @@ if (getConfig().LOG_TO_FILE) {
 
 const transport =
   transports.length > 1
-    ? { target: "pino/multi-target", options: { targets: transports } }
+    ? { targets: transports }
     : transports.length === 1
       ? transports[0]
       : undefined;

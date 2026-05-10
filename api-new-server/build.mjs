@@ -100,7 +100,7 @@ async function buildAll() {
       "tesseract.js/*",
     ],
     sourcemap: "linked",
-    plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
+    plugins: [esbuildPluginPino({ transports: ["pino-pretty", "pino-roll"] })],
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
