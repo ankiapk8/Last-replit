@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { getMonitorSnapshot } from "../lib/monitor";
@@ -9,9 +9,21 @@ import {
   VISUAL_DETECTION_MODEL,
   MODEL_SUMMARY,
 } from "../lib/models";
+import type { ModelConfig } from "../lib/models";
+import { completeChat } from "../lib/ai-client";
 import { sendError } from "../lib/error-handler";
 
 const router: IRouter = Router();
+
+function adminOnly(req: Request, res: Response, next: NextFunction): void {
+  const key = req.headers["x-admin-key"];
+  const secret = process.env.ADMIN_SECRET_KEY;
+  if (!secret || key !== secret) {
+    res.status(403).json({ error: { code: "FORBIDDEN", message: "Admin access required." } });
+    return;
+  }
+  next();
+}
 
 type CheckStatus = "ok" | "fail" | "skipped";
 
@@ -39,29 +51,26 @@ async function checkDatabase(): Promise<CheckResult> {
 }
 
 async function checkAiProvider(): Promise<CheckResult> {
-  const hasGroq = !!process.env["GROQ_API_KEY"];
-  const hasOpenRouter = !!process.env["OPENROUTER_API_KEY"];
+  const hasOpenRouter  = !!process.env["OPENROUTER_API_KEY"];
   const hasOllamaCloud = !!process.env["OLLAMA_CLOUD_API_KEY"];
-  const hasEnvKey =
-    hasGroq ||
-    hasOpenRouter ||
-    hasOllamaCloud ||
-    process.env["OPENAI_API_KEY1"] ||
-    process.env["OPENAI_API_KEY"] ||
-    process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
+  const hasGemini      = !!process.env["GOOGLE_AI_API_KEY"];
+  const hasGroq        = !!process.env["GROQ_API_KEY"];
+  const hasMistral     = !!process.env["MISTRAL_API_KEY"];
+  const hasOpenAI      = !!(process.env["OPENAI_API_KEY1"] || process.env["OPENAI_API_KEY"] || process.env["AI_INTEGRATIONS_OPENAI_API_KEY"]);
 
-  if (hasEnvKey) {
-    const providers: string[] = [];
-    if (hasGroq) providers.push("groq");
-    if (hasOpenRouter) providers.push("openrouter");
-    if (hasOllamaCloud) providers.push("ollama-cloud");
-    if (process.env["OPENAI_API_KEY1"] || process.env["OPENAI_API_KEY"]) providers.push("openai");
-    const fallback =
-      (hasGroq && (hasOpenRouter || hasOllamaCloud)) ||
-      (hasOpenRouter && hasOllamaCloud)
-        ? "cross-provider fallback available"
-        : "no cross-provider fallback";
-    return { status: "ok", message: `providers: ${providers.join(", ")} (${fallback})` };
+  const providers: string[] = [];
+  if (hasGemini)      providers.push("gemini");
+  if (hasGroq)        providers.push("groq");
+  if (hasMistral)     providers.push("mistral");
+  if (hasOpenRouter)  providers.push("openrouter");
+  if (hasOllamaCloud) providers.push("ollama-cloud");
+  if (hasOpenAI)      providers.push("openai");
+
+  if (providers.length > 0) {
+    return {
+      status: "ok",
+      message: `configured providers: ${providers.join(", ")}`,
+    };
   }
 
   try {
@@ -72,9 +81,10 @@ async function checkAiProvider(): Promise<CheckResult> {
   } catch {
     // fall through
   }
+
   return {
     status: "fail",
-    message: "AI provider is not configured. Set GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY.",
+    message: "No AI provider configured. Set GOOGLE_AI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY, or OPENROUTER_API_KEY.",
   };
 }
 
@@ -92,28 +102,30 @@ router.get("/model-info", (_req, res) => {
   });
 });
 
-router.post("/test-model", async (req, res): Promise<void> => {
-  const { model, prompt = "Reply with OK" } = req.body as { model?: string; prompt?: string };
+router.post("/test-model", adminOnly, async (req, res): Promise<void> => {
+  const { model, provider = "openrouter", prompt = "Reply with OK" } = req.body as {
+    model?: string;
+    provider?: string;
+    prompt?: string;
+  };
   if (!model) {
     res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "model is required" } });
     return;
   }
   try {
-    const { openai } = await import("@workspace/integrations-openai-ai-server");
     const start = Date.now();
-    const completion = await openai.chat.completions.create({
+    const result = await completeChat({
       model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 50,
+      maxTokens: 50,
       temperature: 0.1,
     });
     const latencyMs = Date.now() - start;
-    const content = completion.choices[0]?.message?.content ?? "";
-    res.json({ ok: true, model, latencyMs, response: content.slice(0, 200) });
+    res.json({ ok: true, model, provider, latencyMs, response: result.content.slice(0, 200) });
   } catch (err) {
     const status = (err as { status?: number }).status;
     const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ ok: false, model, status, error: message });
+    res.status(500).json({ ok: false, model, provider, status, error: message });
   }
 });
 
@@ -134,8 +146,12 @@ router.get("/healthz", async (_req, res) => {
   });
 });
 
-router.get("/monitor", (_req, res) => {
+router.get("/monitor", adminOnly, (_req, res) => {
   const snapshot = getMonitorSnapshot();
+  const cacheStats = snapshot.cache;
+  const totalCacheOps = cacheStats.hits + cacheStats.misses;
+  (snapshot.cache as typeof snapshot.cache & { hitRate: string }).hitRate =
+    totalCacheOps > 0 ? ((cacheStats.hits / totalCacheOps) * 100).toFixed(1) + "%" : "0%";
   const httpStatus =
     snapshot.status === "healthy" ? 200 : snapshot.status === "degraded" ? 200 : 503;
   res.status(httpStatus).json(snapshot);

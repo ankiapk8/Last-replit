@@ -1,23 +1,20 @@
 /**
- * AI model selection — Groq (primary) with OpenRouter/Ollama Cloud fallback.
- *
- * Groq models:
- *   - Mind map, text, QBank: openai/gpt-oss-120b
- *   - Visual:               meta-llama/llama-4-scout-17b-16e-instruct
+ * AI model selection — each feature uses a different free model
+ * to spread quota across multiple rate-limit buckets.
  */
 
-const envText = process.env.AI_TEXT_MODEL?.trim() || null;
-const envVision = process.env.AI_VISION_MODEL?.trim() || null;
-const envQbank = process.env.AI_QBANK_MODEL?.trim() || null;
+const envText    = process.env.AI_TEXT_MODEL?.trim()    || null;
+const envVision  = process.env.AI_VISION_MODEL?.trim()  || null;
+const envQbank   = process.env.AI_QBANK_MODEL?.trim()   || null;
 const envMindmap = process.env.AI_MINDMAP_MODEL?.trim() || null;
+const envExplain = process.env.AI_EXPLAIN_MODEL?.trim() || null;
 
-// Groq model IDs (served via https://api.groq.com/openai/v1)
-export const FREE_TEXT_MODEL = envText ?? "openai/gpt-oss-120b";
-export const FREE_VISION_MODEL = envVision ?? "meta-llama/llama-4-scout-17b-16e-instruct";
-export const QBANK_MODEL = envQbank ?? "openai/gpt-oss-120b";
-export const MINDMAP_MODEL = envMindmap ?? "openai/gpt-oss-120b";
-export const EXPLAIN_MODEL = envText ?? "openai/gpt-oss-120b";
-export const VISUAL_DETECTION_MODEL = envVision ?? "meta-llama/llama-4-scout-17b-16e-instruct";
+export const FREE_TEXT_MODEL        = envText    ?? "meta-llama/llama-4-maverick:free";
+export const FREE_VISION_MODEL      = envVision  ?? "google/gemma-3-27b-it:free";
+export const QBANK_MODEL            = envQbank   ?? "deepseek/deepseek-r1-0528:free";
+export const MINDMAP_MODEL          = envMindmap ?? "microsoft/mai-ds-r1:free";
+export const EXPLAIN_MODEL          = envExplain ?? "qwen/qwq-32b:free";
+export const VISUAL_DETECTION_MODEL = envVision  ?? "google/gemma-3-27b-it:free";
 
 export const MODEL_SUMMARY = {
   text: FREE_TEXT_MODEL,
@@ -26,10 +23,5 @@ export const MODEL_SUMMARY = {
   mindmap: MINDMAP_MODEL,
   explain: EXPLAIN_MODEL,
   visualDetection: VISUAL_DETECTION_MODEL,
-  provider: "groq",
+  provider: "openrouter",
 };
-
-export interface ModelConfig {
-  model: string;
-  provider: "openrouter" | "ollama-cloud" | "openai" | "gemini" | "groq" | "mistral";
-}

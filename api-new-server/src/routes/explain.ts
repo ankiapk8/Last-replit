@@ -68,8 +68,8 @@ Be precise and clinically accurate. No preamble, no section headers.`,
 }
 
 router.post("/explain", async (req, res): Promise<void> => {
-  const ip = req.ip ?? "unknown";
-  if (!explainRateLimiter(ip)) { res.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many requests." } }); return; }
+  const rateLimitKey = req.isAuthenticated() ? req.user!.id : (req.ip ?? "unknown");
+  if (!explainRateLimiter(rateLimitKey)) { res.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many requests." } }); return; }
 
   const { front, back, mode = "full", choices, correctIndex } = req.body as {
     front?: string; back?: string; mode?: ExplainMode; choices?: string[]; correctIndex?: number;
@@ -108,8 +108,8 @@ router.post("/explain", async (req, res): Promise<void> => {
 });
 
 router.post("/explain/batch", async (req, res): Promise<void> => {
-  const ip = req.ip ?? "unknown";
-  if (!explainRateLimiter(ip)) { res.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many requests." } }); return; }
+  const rateLimitKey = req.isAuthenticated() ? req.user!.id : (req.ip ?? "unknown");
+  if (!explainRateLimiter(rateLimitKey)) { res.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many requests." } }); return; }
 
   const { cards, mode = "brief" } = req.body as { cards?: Array<{ front: string; back: string }>; mode?: ExplainMode };
   if (!Array.isArray(cards) || cards.length === 0) { res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "cards must be a non-empty array." } }); return; }

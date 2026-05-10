@@ -1,6 +1,6 @@
 /**
  * LRU response cache for AI responses.
- * In-memory with bounded size. Can be extended to DB-backed later.
+ * 24-hour TTL, 200 entries, 50MB max — sized to survive a full day of usage.
  */
 
 import crypto from "node:crypto";
@@ -20,9 +20,9 @@ export class ResponseCache {
   private misses = 0;
 
   constructor(
-    maxSize = 50,
-    ttlMs = 300_000,
-    maxTotalSizeBytes = 10 * 1024 * 1024
+    maxSize = 200,
+    ttlMs = 86_400_000,           // 24 hours
+    maxTotalSizeBytes = 50 * 1024 * 1024  // 50MB
   ) {
     this.maxSize = maxSize;
     this.ttlMs = ttlMs;
@@ -48,17 +48,13 @@ export class ResponseCache {
 
   get(key: string): string | undefined {
     const entry = this.cache.get(key);
-    if (!entry) {
-      this.misses++;
-      return undefined;
-    }
+    if (!entry) { this.misses++; return undefined; }
     if (Date.now() > entry.expires) {
       this.currentSizeBytes -= Buffer.byteLength(entry.result, "utf8");
       this.cache.delete(key);
       this.misses++;
       return undefined;
     }
-    // Move to end (LRU)
     this.cache.delete(key);
     this.cache.set(key, entry);
     this.hits++;
@@ -96,9 +92,16 @@ export class ResponseCache {
       misses: this.misses,
       size: this.cache.size,
       sizeBytes: this.currentSizeBytes,
+      hitRate: this.hits + this.misses > 0
+        ? ((this.hits / (this.hits + this.misses)) * 100).toFixed(1) + "%"
+        : "0%",
     };
   }
 }
 
-// Shared singleton
-export const generationCache = new ResponseCache();
+// Shared singleton — 24h TTL, 200 entries, 50MB
+export const generationCache = new ResponseCache(
+  200,
+  86_400_000,
+  50 * 1024 * 1024
+);

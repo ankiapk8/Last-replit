@@ -1,5 +1,7 @@
 /**
- * Unified AI client — Groq (primary) with OpenRouter/Ollama Cloud fallback.
+ * Unified AI client — OpenRouter (primary) with Ollama Cloud fallback.
+ * Includes: global concurrency limiter, exponential backoff on 429s,
+ * and automatic fallback to secondary provider.
  * All AI calls go through this module. No route file should import AI SDKs directly.
  */
 
@@ -30,6 +32,61 @@ export interface ChatResult {
   model: string;
 }
 
+// ─── Global Concurrency Limiter ───────────────────────────────────────────────
+// Prevents bursting OpenRouter when many users generate simultaneously.
+// All AI calls queue here — max 4 run at once.
+
+let activeRequests = 0;
+const MAX_CONCURRENT = 4;
+const waitQueue: Array<() => void> = [];
+
+async function acquireSlot(): Promise<void> {
+  if (activeRequests < MAX_CONCURRENT) {
+    activeRequests++;
+    return;
+  }
+  await new Promise<void>((resolve) => waitQueue.push(resolve));
+  activeRequests++;
+}
+
+function releaseSlot(): void {
+  activeRequests--;
+  const next = waitQueue.shift();
+  if (next) next();
+}
+
+// ─── Exponential Backoff Retry ────────────────────────────────────────────────
+// Retries on 429 and timeout errors with jittered backoff.
+// Other errors (401, 404, 500) propagate immediately.
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelayMs = 2000
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = (err as { status?: number }).status;
+      const isRetryable =
+        status === 429 ||
+        (err instanceof Error && /timeout/i.test(err.message));
+      if (!isRetryable) throw err;
+      if (attempt === maxRetries) break;
+      const delay = baseDelayMs * 2 ** attempt + Math.random() * 1000;
+      logger.warn(
+        { attempt, delayMs: Math.round(delay), status },
+        "Rate limited — retrying with backoff"
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 // ─── Client Cache ─────────────────────────────────────────────────────────────
 
 interface AIClientBundle {
@@ -54,21 +111,18 @@ async function createAIClient() {
 export async function getAIClient(): Promise<AIClientBundle> {
   if (!cachedClient) {
     cachedClient = await createAIClient();
-    const groqKey = process.env.GROQ_API_KEY?.trim();
     const orKey = process.env.OPENROUTER_API_KEY?.trim();
-    const provider = groqKey
-      ? "groq"
-      : orKey
-        ? "openrouter"
-        : process.env.OLLAMA_CLOUD_API_KEY
-          ? "ollama-cloud"
-          : "openai";
+    const provider = orKey
+      ? "openrouter"
+      : process.env.OLLAMA_CLOUD_API_KEY
+        ? "ollama-cloud"
+        : "openai";
     logger.info({ provider }, "AI client initialized");
   }
   return cachedClient;
 }
 
-// ─── Fallback Logic ──────────────────────────────────────────────────────────
+// ─── Fallback Logic ───────────────────────────────────────────────────────────
 
 export function shouldFallback(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
@@ -98,8 +152,9 @@ export async function completeChat(options: ChatOptions): Promise<ChatResult> {
       { signal: AbortSignal.timeout(timeoutMs) }
     );
 
+  await acquireSlot();
   try {
-    const completion = await makeRequest(openai, model);
+    const completion = await withRetry(() => makeRequest(openai, model));
     return {
       content: completion.choices[0]?.message?.content ?? "",
       model,
@@ -112,13 +167,15 @@ export async function completeChat(options: ChatOptions): Promise<ChatResult> {
     const fb = shouldFallback(err) ? getFallbackOpenAI() : null;
     if (fb) {
       logger.info({ model: FALLBACK_MODEL }, "Falling back to secondary AI model");
-      const completion = await makeRequest(fb, FALLBACK_MODEL);
+      const completion = await withRetry(() => makeRequest(fb, FALLBACK_MODEL));
       return {
         content: completion.choices[0]?.message?.content ?? "",
         model: FALLBACK_MODEL,
       };
     }
     throw err;
+  } finally {
+    releaseSlot();
   }
 }
 
@@ -143,10 +200,12 @@ export async function* streamChat(
       { signal: AbortSignal.timeout(timeoutMs) }
     );
 
+  await acquireSlot();
   let stream;
   try {
-    stream = await makeRequest(openai, model);
+    stream = await withRetry(() => makeRequest(openai, model));
   } catch (err) {
+    releaseSlot();
     logger.warn(
       { err: err instanceof Error ? err.message : err, model },
       "Primary AI model failed (streaming)"
@@ -154,19 +213,24 @@ export async function* streamChat(
     const fb = shouldFallback(err) ? getFallbackOpenAI() : null;
     if (fb) {
       logger.info({ model: FALLBACK_MODEL }, "Falling back to secondary AI model (streaming)");
-      stream = await makeRequest(fb, FALLBACK_MODEL);
+      await acquireSlot();
+      stream = await withRetry(() => makeRequest(fb, FALLBACK_MODEL));
     } else {
       throw err;
     }
   }
 
-  for await (const chunk of stream) {
-    const text = chunk.choices[0]?.delta?.content;
-    if (text) yield text;
+  try {
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) yield text;
+    }
+  } finally {
+    releaseSlot();
   }
 }
 
-// ─── SSE Helper ───────────────────────────────────────────────────────────────
+// ─── SSE Helpers ──────────────────────────────────────────────────────────────
 
 export function setupSSEHeaders(res: import("express").Response): void {
   res.setHeader("Content-Type", "text/event-stream");

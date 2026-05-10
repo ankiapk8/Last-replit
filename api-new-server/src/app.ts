@@ -4,6 +4,8 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import path from "node:path";
 import fs from "node:fs";
+import helmet from "helmet";
+import compression from "compression";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
@@ -12,6 +14,9 @@ import { globalErrorHandler } from "./lib/error-handler";
 import { WebhookHandlers } from "./webhookHandlers";
 
 const app: Express = express();
+
+// Trust the first proxy (Replit, Render, Nginx) so req.ip is the real client IP
+app.set("trust proxy", 1);
 
 // Stripe webhook route BEFORE body-parsing middleware (needs raw Buffer)
 app.post(
@@ -40,9 +45,16 @@ app.post(
 
 app.use(cookieParser());
 app.use(pinoHttp({ logger }));
-app.use(cors());
-app.use(express.json({ limit: "200mb" }));
-app.use(express.urlencoded({ extended: true, limit: "200mb" }));
+app.use(
+  cors({
+    origin: process.env.APP_URL ?? "http://localhost:5000",
+    credentials: true,
+  })
+);
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(helmet());
+app.use(compression());
 
 // Request context (ID + timing) — before routes
 app.use(requestContextMiddleware);

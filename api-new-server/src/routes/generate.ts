@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
 import { db, decksTable, cardsTable, qbanksTable, questionsTable } from "@workspace/db";
 import { FREE_TEXT_MODEL, VISUAL_DETECTION_MODEL, QBANK_MODEL } from "../lib/models";
-import { getEffectiveIsPro, throwLimitError } from "../lib/free-tier-limits";
+import { getEffectiveIsPro, throwLimitError, checkDeckQuota, FREE_TIER } from "../lib/free-tier-limits";
 import { createRateLimiter } from "../lib/rate-limiter";
 import { generationCache, ResponseCache } from "../lib/response-cache";
 import { startGeneration, completeGeneration, failGeneration } from "../lib/monitor";
@@ -14,6 +14,12 @@ import {
   shouldFallback,
 } from "../lib/ai-client";
 import { logger } from "../lib/logger";
+
+  const inFlight = new Map<string, Promise<string>>();
+
+  function contentCacheKey(model: string, preparedText: string, customPrompt: string): string {
+    return ResponseCache.hash(`${model}:${preparedText}:${customPrompt}`);
+  }
 
 interface GenerationStatus {
   status: "running" | "completed" | "failed";
@@ -178,8 +184,8 @@ function friendlyAiError(err: unknown): string {
 // ─── POST /api/generate/stream ────────────────────────────────────────────────
 
 router.post("/generate/stream", async (req: Request, res: Response): Promise<void> => {
-  const ip = req.ip ?? "unknown";
-  if (!generateRateLimiter(ip)) {
+  const rateLimitKey = req.isAuthenticated() ? req.user!.id : (req.ip ?? "unknown");
+  if (!generateRateLimiter(rateLimitKey)) {
     res.status(429).json({
       error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
     });
@@ -217,7 +223,30 @@ router.post("/generate/stream", async (req: Request, res: Response): Promise<voi
     return;
   }
 
+  if (text.length > 500_000) {
+    res.status(400).json({
+      error: { code: "VALIDATION_ERROR", message: "text exceeds maximum allowed length of 500,000 characters." },
+    });
+    return;
+  }
+
   const userId = req.isAuthenticated() ? req.user!.id : null;
+
+  // Enforce free tier deck limit for anonymous users too
+  if (!userId) {
+    const anonKey = req.ip ?? "unknown";
+    const { allowed } = await checkDeckQuota(anonKey, null);
+    if (!allowed) {
+      res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: `Free users can create up to ${FREE_TIER.MAX_DECKS} decks. Sign in and upgrade to Pro for unlimited decks.`,
+          details: { limitReached: true, feature: "deck_count", requiredPlan: "pro" },
+        },
+      });
+      return;
+    }
+  }
   const resolvedParentId = typeof parentId === "number" ? parentId : null;
   const targetCards = typeof cardCount === "number" && cardCount > 0 ? cardCount : 20;
   const targetVisual =
@@ -261,26 +290,39 @@ Return ONLY a valid JSON object — no markdown fences, no explanation:
 RULES: Generate exactly ${targetCards} flashcards and ${mcqCount} MCQs. Each covers one atomic fact. MCQs must be USMLE/professional exam style. Distribute across ENTIRE source material. Focus on high-yield clinical facts.`;
 
       const user = `Generate ${targetCards} flashcards and ${mcqCount} MCQs from this medical text:\n\n${preparedText}`;
-      const cacheKey = ResponseCache.hash(`${FREE_TEXT_MODEL}:${system}:${user}`);
+      const cacheKey = contentCacheKey(FREE_TEXT_MODEL, preparedText, customPrompt ?? "");
       const cached = generationCache.get(cacheKey);
       let cards: RawCard[];
 
       if (cached) {
-        sendProgress(50, "Generating cards…", 0, "generating");
+        sendProgress(50, "Loading from cache…", 0, "generating");
         cards = parseUnifiedCardsFromAI(cached);
       } else {
-        sendProgress(10, "Generating all cards from your document…", 0, "generating");
-        const result = await completeChat({
-          model: FREE_TEXT_MODEL,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          maxTokens: 8000,
-          temperature: 0.3,
-        });
-        const rawContent = result.content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-        generationCache.set(cacheKey, rawContent);
+        let resultPromise = inFlight.get(cacheKey);
+        if (!resultPromise) {
+          sendProgress(10, "Generating all cards from your document…", 0, "generating");
+          resultPromise = completeChat({
+            model: FREE_TEXT_MODEL,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+            maxTokens: 8000,
+            temperature: 0.3,
+          }).then((r) => {
+            const raw = r.content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+            generationCache.set(cacheKey, raw);
+            inFlight.delete(cacheKey);
+            return raw;
+          }).catch((err) => {
+            inFlight.delete(cacheKey);
+            throw err;
+          });
+          inFlight.set(cacheKey, resultPromise);
+        } else {
+          sendProgress(10, "Joining existing generation…", 0, "generating");
+        }
+        const rawContent = await resultPromise;
         cards = parseUnifiedCardsFromAI(rawContent);
       }
       allCards.push(...cards);
@@ -330,8 +372,8 @@ router.get("/generate/status/:id", async (req: Request, res: Response): Promise<
 // ─── POST /api/generate-qbank/stream ─────────────────────────────────────────
 
 router.post("/generate-qbank/stream", async (req: Request, res: Response): Promise<void> => {
-  const ip = req.ip ?? "unknown";
-  if (!generateRateLimiter(ip)) {
+  const rateLimitKey = req.isAuthenticated() ? req.user!.id : (req.ip ?? "unknown");
+  if (!generateRateLimiter(rateLimitKey)) {
     res.status(429).json({
       error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
     });
@@ -399,26 +441,39 @@ Return ONLY a valid JSON array — no markdown fences:
 RULES: Generate exactly ${targetQuestions} MCQs. USMLE/professional exam style. Distribute across ENTIRE source material.`;
 
     const user = `Generate ${targetQuestions} MCQs from this medical text:\n\n${preparedText}`;
-    const qbankCacheKey = ResponseCache.hash(`${QBANK_MODEL}:${system}:${user}`);
+    const qbankCacheKey = contentCacheKey(QBANK_MODEL, preparedText, customPrompt ?? "");
     const qbankCached = generationCache.get(qbankCacheKey);
     let allQuestions: RawCard[];
 
     if (qbankCached) {
-      sendProgress(30, "Generating questions…");
+      sendProgress(30, "Loading from cache…");
       allQuestions = parseUnifiedCardsFromAI(qbankCached);
     } else {
-      sendProgress(10, "Generating all questions from your document…");
-      const result = await completeChat({
-        model: QBANK_MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        maxTokens: 8000,
-        temperature: 0.3,
-      });
-      const rawContent = result.content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-      generationCache.set(qbankCacheKey, rawContent);
+      let qbankResultPromise = inFlight.get(qbankCacheKey);
+      if (!qbankResultPromise) {
+        sendProgress(10, "Generating all questions from your document…");
+        qbankResultPromise = completeChat({
+          model: QBANK_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          maxTokens: 8000,
+          temperature: 0.3,
+        }).then((r) => {
+          const raw = r.content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+          generationCache.set(qbankCacheKey, raw);
+          inFlight.delete(qbankCacheKey);
+          return raw;
+        }).catch((err) => {
+          inFlight.delete(qbankCacheKey);
+          throw err;
+        });
+        inFlight.set(qbankCacheKey, qbankResultPromise);
+      } else {
+        sendProgress(10, "Joining existing generation…");
+      }
+      const rawContent = await qbankResultPromise;
       allQuestions = parseUnifiedCardsFromAI(rawContent);
     }
 

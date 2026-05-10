@@ -2,21 +2,20 @@ import { Router, type IRouter } from "express";
 import { createRateLimiter } from "../lib/rate-limiter";
 import { MINDMAP_MODEL } from "../lib/models";
 import { completeChat, shouldFallback } from "../lib/ai-client";
+import { generationCache, ResponseCache } from "../lib/response-cache";
 
 const router: IRouter = Router();
 const mindMapRateLimiter = createRateLimiter(10, 60_000);
 
 router.post("/mind-map", async (req, res): Promise<void> => {
-  const ip = req.ip ?? "unknown";
-  if (!mindMapRateLimiter(ip)) {
-    res
-      .status(429)
-      .json({
-        error: {
-          code: "RATE_LIMITED",
-          message: "Too many requests. Please wait before generating again.",
-        },
-      });
+  const rateLimitKey = req.isAuthenticated() ? req.user!.id : (req.ip ?? "unknown");
+  if (!mindMapRateLimiter(rateLimitKey)) {
+    res.status(429).json({
+      error: {
+        code: "RATE_LIMITED",
+        message: "Too many requests. Please wait before generating again.",
+      },
+    });
     return;
   }
 
@@ -24,6 +23,12 @@ router.post("/mind-map", async (req, res): Promise<void> => {
     topic?: string;
     cards?: Array<{ front: string; back: string }>;
   };
+  if (topic && topic.length > 10_000) {
+    res.status(400).json({
+      error: { code: "VALIDATION_ERROR", message: "topic exceeds maximum allowed length." },
+    });
+    return;
+  }
   if (!topic && (!cards || cards.length === 0)) {
     res
       .status(400)
@@ -39,14 +44,13 @@ router.post("/mind-map", async (req, res): Promise<void> => {
     !process.env.OPENAI_API_KEY &&
     !process.env.AI_INTEGRATIONS_OPENAI_API_KEY
   ) {
-    res
-      .status(503)
-      .json({
-        error: {
-          code: "SERVICE_UNAVAILABLE",
-          message: "AI is not configured. Set GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY.",
-        },
-      });
+    res.status(503).json({
+      error: {
+        code: "SERVICE_UNAVAILABLE",
+        message:
+          "AI is not configured. Set GROQ_API_KEY, OPENROUTER_API_KEY, or OLLAMA_CLOUD_API_KEY.",
+      },
+    });
     return;
   }
 
@@ -75,6 +79,16 @@ Rules:
 - colors: use varied hex colors from this palette: #6366f1, #ec4899, #f59e0b, #10b981, #3b82f6, #ef4444, #8b5cf6
 - All text must be concise and educational`;
 
+  const mindMapCacheKey = ResponseCache.hash(`mindmap:${content}`);
+  const mindMapCached = generationCache.get(mindMapCacheKey);
+  if (mindMapCached) {
+    const cachedJsonMatch = mindMapCached.match(/\{[\s\S]*\}/);
+    if (cachedJsonMatch) {
+      res.json(JSON.parse(cachedJsonMatch[0]));
+      return;
+    }
+  }
+
   try {
     const result = await completeChat({
       model: MINDMAP_MODEL,
@@ -86,16 +100,15 @@ Rules:
       temperature: 0.4,
     });
     const raw = result.content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+    generationCache.set(mindMapCacheKey, raw);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      res
-        .status(500)
-        .json({
-          error: {
-            code: "AI_ERROR",
-            message: "AI returned invalid mind map format. Please try again.",
-          },
-        });
+      res.status(500).json({
+        error: {
+          code: "AI_ERROR",
+          message: "AI returned invalid mind map format. Please try again.",
+        },
+      });
       return;
     }
     const parsed = JSON.parse(jsonMatch[0]);

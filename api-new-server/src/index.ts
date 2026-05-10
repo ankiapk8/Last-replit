@@ -4,6 +4,7 @@ import { ensureDatabaseSchema } from "@workspace/db";
 import { writeLogToDb, cleanupOldLogs } from "./lib/db-logger";
 import { getConfig, isDevelopment } from "./config";
 import { loadDevOverridesFromDB } from "./lib/dev-overrides";
+import { terminateOcrWorker } from "./routes/extract-pdf";
 
 const rawPort = process.env["PORT"] ?? "3001";
 const port = Number(rawPort);
@@ -54,6 +55,20 @@ async function main(): Promise<void> {
   app.listen(port, () => {
     logger.info({ port, env: getConfig().NODE_ENV }, "Server listening");
   });
+
+  async function shutdown(signal: string): Promise<void> {
+    logger.info({ signal }, "Shutting down gracefully…");
+    try {
+      await terminateOcrWorker();
+      logger.info("OCR worker terminated");
+    } catch (err) {
+      logger.warn({ err }, "OCR worker termination failed");
+    }
+    process.exit(0);
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT",  () => shutdown("SIGINT"));
 }
 
 main().catch((err) => {
