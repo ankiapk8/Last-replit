@@ -16,6 +16,11 @@ export const MINDMAP_MODEL          = envMindmap ?? "microsoft/mai-ds-r1:free";
 export const EXPLAIN_MODEL          = envExplain ?? "qwen/qwq-32b:free";
 export const VISUAL_DETECTION_MODEL = envVision  ?? "google/gemma-3-27b-it:free";
 
+export type ModelConfig = {
+  model: string;
+  provider: "openrouter" | "ollama-cloud" | "openai" | "gemini" | "groq" | "mistral";
+};
+
 export const MODEL_SUMMARY = {
   text: FREE_TEXT_MODEL,
   vision: FREE_VISION_MODEL,
