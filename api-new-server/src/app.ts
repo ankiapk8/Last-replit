@@ -12,6 +12,7 @@ import { requestContextMiddleware } from "./lib/request-context";
 import { requestLogMiddleware } from "./middlewares/requestLogMiddleware";
 import { globalErrorHandler } from "./lib/error-handler";
 import { WebhookHandlers } from "./webhookHandlers";
+import internalAdminRouter from "./routes/internal-admin";
 
 const app: Express = express();
 
@@ -60,9 +61,15 @@ app.use(compression());
 app.use(requestContextMiddleware);
 app.use(requestLogMiddleware);
 
+// ─── Public API routes ───────────────────────────────────────────────────────
 app.use("/api", router);
 
-// Static frontend serving
+// ─── Internal admin routes — completely separate from /api ───────────────────
+// These routes use their own auth middleware (JWT + API key + role + IP)
+// They are NOT exposed to the public frontend
+app.use("/internal/admin", internalAdminRouter);
+
+// Static frontend serving (public only — no admin pages)
 const staticDir = process.env.STATIC_DIR ?? path.resolve(process.cwd(), "public");
 if (fs.existsSync(staticDir)) {
   logger.info({ staticDir }, "Serving static frontend");
@@ -80,7 +87,8 @@ if (fs.existsSync(staticDir)) {
       },
     })
   );
-  app.get(/^(?!\/api\/).*/, (_req: Request, res: Response, next: NextFunction) => {
+  // SPA catch-all — only for non-API, non-internal routes
+  app.get(/^(?!\/api\/|\/internal\/).*/, (_req: Request, res: Response, next: NextFunction) => {
     const indexPath = path.join(staticDir, "index.html");
     if (!fs.existsSync(indexPath)) {
       next();

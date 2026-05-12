@@ -19,6 +19,8 @@ import subscriptionRouter from "./subscription";
 import adminRouter from "./admin";
 import devRouter from "./dev";
 import logsRouter from "./logs";
+import agentsRouter from "./agents";
+import agentStreamRouter from "./agent-stream";
 
 const router: IRouter = Router();
 
@@ -42,5 +44,9 @@ router.use(transferRouter);
 router.use(adminRouter);
 router.use(devRouter);
 router.use(logsRouter);
+
+// Agent routes (v2)
+router.use("/v2/agents", agentsRouter);
+router.use("/v2/agents/stream", agentStreamRouter);
 
 export default router;

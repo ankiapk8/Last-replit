@@ -5,6 +5,8 @@ import { writeLogToDb, cleanupOldLogs } from "./lib/db-logger";
 import { getConfig, isDevelopment } from "./config";
 import { loadDevOverridesFromDB } from "./lib/dev-overrides";
 import { terminateOcrWorker } from "./routes/extract-pdf";
+import { registerBuiltInTools } from "./tools/register";
+import { loadAllConfigs } from "./lib/config-service";
 
 const rawPort = process.env["PORT"] ?? "3001";
 const port = Number(rawPort);
@@ -38,7 +40,7 @@ async function main(): Promise<void> {
     } catch (err) {
       logger.warn({ err }, "Log cleanup failed (non-fatal)");
     }
-  }, 86400_000); // daily
+  }, 86400_000);
 
   // 4. Load dev overrides in non-production
   if (isDevelopment()) {
@@ -51,7 +53,16 @@ async function main(): Promise<void> {
   // 5. Initialize Stripe
   await initStripe();
 
-  // 6. Start server
+  // 6. Register agent tools
+  registerBuiltInTools();
+  logger.info("Agent tools registered");
+
+  // 7. Load internal admin configs (providers, modes, tools, routing, MCP)
+  await loadAllConfigs().catch((err) =>
+    logger.warn({ err }, "Internal config load failed (non-fatal) — using defaults")
+  );
+
+  // 8. Start server
   app.listen(port, () => {
     logger.info({ port, env: getConfig().NODE_ENV }, "Server listening");
   });
