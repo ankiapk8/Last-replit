@@ -1,36 +1,260 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# AnkiGen — Production Docker Compose
+# Single-domain, path-based routing:
+#   /        → frontend (public)
+#   /api     → production API
+#   /admin   → admin frontend + admin API
+#
+# Only the proxy is publicly exposed.
+# ══════════════════════════════════════════════════════════════════════════════
+
+version: "3.9"
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  # Internal-only network — no external access
+  backend:
+    driver: bridge
+    internal: true
+    name: ankigen_backend
+
+  # Proxy network — proxy can reach backend services
+  proxy:
+    driver: bridge
+    name: ankigen_proxy
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+    name: ankigen_postgres_data
+
+  letsencrypt:
+    driver: local
+    name: ankigen_letsencrypt
+
+  certbot_webroot:
+    driver: local
+    name: ankigen_certbot_webroot
+
+  api_logs:
+    driver: local
+    name: ankigen_api_logs
+
+# ── Services ─────────────────────────────────────────────────────────────────
 services:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 1. PostgreSQL Database
+  # ══════════════════════════════════════════════════════════════════════════
+  db:
+    image: postgres:16-alpine
+    container_name: ankigen-db
+    restart: unless-stopped
+    networks:
+      - backend
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ankigen}
+      POSTGRES_USER: ${POSTGRES_USER:-ankigen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ankigen} -d ${POSTGRES_DB:-ankigen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # NO port exposure — internal only
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 2. Production API Server
+  # ══════════════════════════════════════════════════════════════════════════
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/api/Dockerfile
+    container_name: ankigen-api
     restart: unless-stopped
-    ports:
-      - "8080:8080"
-    env_file:
-      - .env
-    environment:
-      PORT: "8080"
-      NODE_ENV: production
-      STATIC_DIR: /app/public
-
-  frontend:
-    image: node:24-bookworm-slim
-    working_dir: /app
-    restart: unless-stopped
-    ports:
-      - "5000:5000"
-    env_file:
-      - .env
-    environment:
-      PORT: "5000"
-      BASE_PATH: "/"
-      API_PORT: "8080"
-      NODE_ENV: development
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: >
-      bash -c "corepack enable && pnpm install --frozen-lockfile 2>/dev/null || pnpm install &&
-               PORT=5000 BASE_PATH=/ API_PORT=8080 pnpm --filter @workspace/anki-generator run dev"
+    networks:
+      - backend
+      - proxy
     depends_on:
-      - api
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgres://${POSTGRES_USER:-ankigen}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ankigen}
+      # AI Providers
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      OLLAMA_CLOUD_API_KEY: ${OLLAMA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      # Model selection
+      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-openai/gpt-oss-120b}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
+      AI_QBANK_MODEL: ${AI_QBANK_MODEL:-openai/gpt-oss-120b}
+      AI_MINDMAP_MODEL: ${AI_MINDMAP_MODEL:-openai/gpt-oss-120b}
+      AI_EXPLAIN_MODEL: ${AI_EXPLAIN_MODEL:-openai/gpt-oss-120b}
+      # Admin auth
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?ADMIN_JWT_SECRET is required}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@mydomain.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      ADMIN_IP_ALLOWLIST: ${ADMIN_IP_ALLOWLIST:-}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?ADMIN_SECRET_KEY is required}
+      # CORS
+      APP_URL: https://${DOMAIN:-mydomain.com}
+      ADMIN_URL: https://${DOMAIN:-mydomain.com}/admin
+      # Stripe (optional)
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_TO_FILE: "true"
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+      LOG_FILE_PATH: /app/logs/server.log
+      # Encryption
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+    volumes:
+      - api_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # NO port exposure to host — accessible only via proxy network
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 3. Public Frontend
+  # ══════════════════════════════════════════════════════════════════════════
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    container_name: ankigen-frontend
+    restart: unless-stopped
+    networks:
+      - proxy
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    # NO port exposure to host — accessible only via proxy network
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 4. Admin Frontend
+  # ══════════════════════════════════════════════════════════════════════════
+  admin:
+    build:
+      context: .
+      dockerfile: docker/admin/Dockerfile
+    container_name: ankigen-admin
+    restart: unless-stopped
+    networks:
+      - proxy
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    # NO port exposure to host — accessible only via proxy network
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # 5. Reverse Proxy (Nginx + Let's Encrypt)
+  # ONLY publicly exposed service
+  # ══════════════════════════════════════════════════════════════════════════
+  proxy:
+    build:
+      context: .
+      dockerfile: docker/proxy/Dockerfile
+    container_name: ankigen-proxy
+    restart: unless-stopped
+    networks:
+      - proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      frontend:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    environment:
+      DOMAIN: ${DOMAIN:-mydomain.com}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@mydomain.com}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

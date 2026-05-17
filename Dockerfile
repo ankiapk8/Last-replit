@@ -37,6 +37,7 @@ COPY lib/integrations-openai-ai-server/package.json ./lib/integrations-openai-ai
 COPY artifacts/anki-generator/package.json   ./artifacts/anki-generator/
 COPY api-new-server/package.json             ./api-new-server/
 COPY artifacts/mockup-sandbox/package.json   ./artifacts/mockup-sandbox/
+COPY admin-frontend/package.json             ./admin-frontend/
 
 RUN pnpm install --frozen-lockfile=true || pnpm install --frozen-lockfile=false
 
@@ -52,6 +53,7 @@ ENV PORT=8080
 
 RUN pnpm --filter @workspace/api-spec run codegen || true
 RUN pnpm --filter @workspace/anki-generator run build
+RUN pnpm --filter @workspace/admin-frontend run build
 RUN pnpm --filter @workspace/api-new-server run build
 
 
@@ -59,7 +61,7 @@ RUN pnpm --filter @workspace/api-new-server run build
 FROM base AS runner
 
 LABEL org.opencontainers.image.title="AnkiGen"
-LABEL org.opencontainers.image.description="AI-powered Anki flashcard generator"
+LABEL org.opencontainers.image.description="AI-powered Anki flashcard generator — Unified"
 
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -72,6 +74,7 @@ COPY --from=build /app/lib ./lib
 COPY --from=build /app/api-new-server/package.json ./api-new-server/
 COPY --from=build /app/api-new-server/dist          ./api-new-server/dist
 COPY --from=build /app/artifacts/anki-generator/dist/public ./public
+COPY --from=build /app/admin-frontend/dist          ./admin
 
 RUN pnpm install --prod --frozen-lockfile=true --filter @workspace/api-new-server... 2>/dev/null || pnpm install --prod --frozen-lockfile=false --filter @workspace/api-new-server... \
     && pnpm store prune

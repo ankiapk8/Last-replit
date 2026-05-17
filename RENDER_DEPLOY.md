@@ -1,148 +1,246 @@
-# Deploying to Render
+# Render.com Deployment — Step by Step
 
-This project ships with a `Dockerfile` and `render.yaml` Blueprint that deploy
-AnkiGen (frontend + API + database) as a single web service on Render.com.
+## Architecture on Render
 
-## What gets deployed
+Since Render assigns each service its own `*.onrender.com` URL, we use a **unified single-container approach**:
 
-- **Web service** (`anki-generator`) — Docker container running the new Express API
-  server (`api-new-server`) and the built React frontend on a single port (8080).
-- **Postgres database** (`anki-generator-db`) — Managed Postgres 16. The
-  connection string is injected into the web service automatically as
-  `DATABASE_URL`.
+```
+mydomain.com/       → served by the API container (public frontend static files)
+mydomain.com/api/*  → served by the API container (Express.js routes)
+mydomain.com/admin  → served by the API container (admin frontend static files)
+```
 
-## Architecture
+The root `Dockerfile` builds ALL three codebases into one image. The API server (`app.ts`) serves the static frontend at `/` and admin at `/admin`.
 
-The new API server (`api-new-server/`) is a clean rebuild with:
+---
 
-- **Database-backed logging** — All logs saved to PostgreSQL `server_logs` table.
-  Logs persist across restarts and are queryable via `GET /api/logs` (admin only).
-- **File-based log fallback** — When DB is unavailable, logs write to local files.
-- **Consistent error responses** — Every endpoint returns standardized
-  `{ error: { code, message, details, request_id } }` format.
-- **Request correlation** — Every request gets a unique `X-Request-Id` header
-  for tracing through logs.
-- **DB-backed rate limiting & caching** — Survives restarts, works across instances.
-- **Unified AI client** — All AI calls centralized with automatic OpenRouter → Ollama fallback.
-- **Zero frontend changes** — All existing API endpoints preserved exactly.
-
-## Step-by-step
-
-### 1. Push to GitHub
+## Step 1: Push Code to GitHub
 
 ```bash
+cd /root/Last-replit
 git add .
-git commit -m "rebuild api server with db-backed logging"
+git commit -m "feat: unified production build for Render deployment"
 git push origin main
 ```
 
-### 2. Create the Blueprint on Render
+---
 
-1. Log in to [dashboard.render.com](https://dashboard.render.com)
-2. Click **New → Blueprint**
-3. Connect your GitHub account and select this repository
-4. Render reads `render.yaml` and proposes the `anki-generator` web service +
-   `anki-generator-db` Postgres database
-5. Click **Apply**
+## Step 2: Create Render Account
 
-### 3. Set secrets
-
-When prompted, fill in these secret values:
-
-| Key | Value |
-|-----|-------|
-| `OPENROUTER_API_KEY` | Your OpenRouter key — get one free at [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `OLLAMA_CLOUD_API_KEY` | Your Ollama Cloud key — get one at [ollama.com](https://ollama.com) |
-
-Everything else (`DATABASE_URL`, `PORT`, `STATIC_DIR`, `NODE_ENV`, logging config)
-is pre-configured in `render.yaml`.
-
-### 4. Wait for the first build
-
-The first build takes **5–10 minutes** because Docker has to compile the
-`canvas` native module from source. Subsequent deploys are faster due to
-layer caching.
+1. Go to https://dashboard.render.com
+2. Sign up / log in
+3. Click **New +** → **Blueprint**
 
 ---
 
-## Required environment variables
+## Step 3: Connect Repository
 
-| Variable | Source | Notes |
-|---|---|---|
-| `DATABASE_URL` | Render Postgres (auto-injected) | Wired by `render.yaml` |
-| `OPENROUTER_API_KEY` | **You provide at deploy time** | Real OpenRouter key (`sk-or-...`) |
-| `OLLAMA_CLOUD_API_KEY` | **You provide at deploy time** | Ollama Cloud key for cross-provider fallback |
-| `PORT` | Set in `render.yaml` | `8080` — do not change |
-| `STATIC_DIR` | Set in `render.yaml` | `/app/public` — do not change |
-| `NODE_ENV` | Set in `render.yaml` | `production` |
-| `LOG_LEVEL` | Set in `render.yaml` | `info` — controls minimum log level |
-| `LOG_TO_FILE` | Set in `render.yaml` | `true` — enables file-based log fallback |
-| `LOG_RETENTION_DAYS` | Set in `render.yaml` | `30` — auto-delete logs older than N days |
+1. Connect your GitHub account
+2. Select the repository
+3. Render reads `render.yaml` automatically
+4. Click **Apply**
+
+This creates:
+- **1 Web Service:** `ankigen-api` (Docker)
+- **1 Database:** `ankigen-db` (PostgreSQL 16)
 
 ---
 
-## Health check
+## Step 4: Set Secret Environment Variables
 
-Render polls `GET /api/healthz` every 30 seconds. The endpoint checks:
-- PostgreSQL connectivity
-- AI provider key presence
+In the Render dashboard, go to **ankigen-api → Environment → Add Secret File** or set individually:
 
-If both pass, it returns `200 {"status":"ok"}`. A `503` causes Render to
-restart the instance.
+| Variable | How to Generate |
+|----------|----------------|
+| `OPENROUTER_API_KEY` | Get from https://openrouter.ai/keys |
+| `ADMIN_JWT_SECRET` | `openssl rand -hex 32` |
+| `ADMIN_SECRET_KEY` | `openssl rand -hex 32` |
+| `ENCRYPTION_KEY` | `openssl rand -hex 32` |
+| `ADMIN_EMAIL` | Your admin email |
+| `ADMIN_PASSWORD` | Strong password (16+ chars) |
+| `STRIPE_SECRET_KEY` | (optional) From Stripe dashboard |
+| `STRIPE_WEBHOOK_SECRET` | (optional) From Stripe webhooks |
 
----
-
-## Viewing logs
-
-### In the database (recommended for production)
-
-The new API server saves all logs to the `server_logs` table. Admins can query:
-
-```
-GET /api/logs?level=error&limit=50&since=24h
+Generate secrets:
+```bash
+echo "ADMIN_JWT_SECRET=$(openssl rand -hex 32)"
+echo "ADMIN_SECRET_KEY=$(openssl rand -hex 32)"
+echo "ENCRYPTION_KEY=$(openssl rand -hex 32)"
 ```
 
-This requires admin/moderator authentication.
+---
 
-### In Render dashboard
+## Step 5: Configure Custom Domain
 
-Standard stdout/stderr logs are available in the Render dashboard under
-**Logs** for the web service.
+### 5a: Add Domain in Render
 
-### Log file fallback
+1. Go to **ankigen-api → Settings → Custom Domains**
+2. Add `mydomain.com`
+3. Render shows you a DNS target (e.g., `ankigen-api.onrender.com`)
 
-When the database is unavailable, logs are written to local files at
-`/app/api-new-server/logs/server.log` (rotating, max 10MB per file).
+### 5b: Configure DNS
+
+In your domain registrar (GoDaddy, Cloudflare, etc.):
+
+| Type | Name | Value | TTL |
+|------|------|-------|-----|
+| CNAME | @ | ankigen-api.onrender.com | 300 |
+| CNAME | www | ankigen-api.onrender.com | 300 |
+
+### 5c: Enable HTTPS
+
+1. In Render: **ankigen-api → Settings → HTTPS**
+2. Click **Verify DNS** — Render auto-provisions Let's Encrypt
+3. Enable **Force HTTPS** (redirect HTTP → HTTPS)
+
+Wait 5-10 minutes for SSL provisioning.
 
 ---
 
-## Local Docker test before pushing
+## Step 6: Wait for First Deploy
+
+Render auto-deploys when you click Apply. Monitor progress:
+
+1. Go to **ankigen-api → Deploys**
+2. Watch the build logs
+3. Build takes ~5-10 minutes (installs deps, builds all 3 codebases)
+
+---
+
+## Step 7: Create Admin User
+
+Connect to the database and create your admin user:
 
 ```bash
-# Build the image locally
-docker build -t ankigen .
+# In Render dashboard → ankigen-db → Connect → External Connection
+# Copy the external connection string, then:
+psql "<EXTERNAL_CONNECTION_STRING>"
 
-# Run with your real keys
-docker run --rm -p 8080:8080 \
-  -e DATABASE_URL="postgres://user:pw@host:5432/db" \
-  -e OPENROUTER_API_KEY="sk-or-..." \
-  ankigen
-
-# Or use docker-compose (spins up Postgres for you)
-cp .env.example .env   # then set OPENROUTER_API_KEY in .env
-docker compose up --build
+# Insert admin user (SHA-256 hash of your password)
+INSERT INTO public.users (id, email, password_hash, role, created_at, updated_at)
+VALUES (
+    gen_random_uuid(),
+    'admin@mydomain.com',
+    encode(digest('YOUR_ADMIN_PASSWORD', 'sha256'), 'hex'),
+    'admin',
+    NOW(),
+    NOW()
+);
+\q
 ```
 
-Open http://localhost:8080 to confirm everything works before pushing to GitHub.
+Or use the Render Shell:
+1. Go to **ankigen-api → Shell**
+2. Run: `node -e "const crypto = require('crypto'); console.log(crypto.createHash('sha256').update('YOUR_PASSWORD').digest('hex'))"`
+3. Copy the hash and use it in the SQL above
 
 ---
 
-## Notes
+## Step 8: Verify Deployment
 
-- Database migrations run automatically on every startup via
-  `ensureDatabaseSchema()` — no separate migration step needed. The new
-  `server_logs` and `generation_status` tables are created automatically.
-- The app is stateless except for the database; you can scale horizontally
-  by adding more Render instances pointing at the same `DATABASE_URL`.
-- The new API server is fully compatible with the existing frontend — zero
-  frontend code changes required.
+```bash
+# 1. Health check
+curl https://mydomain.com/api/healthz
+# Expected: {"status":"ok","checks":{"database":{"status":"ok"},"ai":{"status":"ok"}}}
+
+# 2. Frontend loads
+curl -I https://mydomain.com/
+# Expected: 200, content-type: text/html
+
+# 3. Admin frontend loads
+curl -I https://mydomain.com/admin
+# Expected: 200, content-type: text/html
+
+# 4. Admin login
+curl -s -X POST https://mydomain.com/api/admin/auth/token \
+  -H "Authorization: Basic $(echo -n 'admin@mydomain.com:YOUR_PASSWORD' | base64)" \
+  -H "Content-Type: application/json" \
+  -d '{"ttl_minutes": 60}'
+# Expected: {"ok":true,"data":{"token":"eyJ...","expires_in":3600}}
+
+# 5. Admin health (use token from above)
+curl -s https://mydomain.com/api/admin/health \
+  -H "Authorization: Bearer <TOKEN>"
+# Expected: {"ok":true,"data":{"status":"healthy",...}}
+```
+
+---
+
+## Step 9: Update CORS Origins
+
+The API's CORS is configured via env vars. Make sure these are set in Render:
+
+```
+APP_URL=https://mydomain.com
+ADMIN_URL=https://mydomain.com/admin
+```
+
+If you need to add more origins, update the `APP_URL` and `ADMIN_URL` in Render dashboard.
+
+---
+
+## Step 10: Set Up Monitoring
+
+### View Logs
+- Render dashboard → **ankigen-api → Logs**
+- Or: **ankigen-api → Shell** → `tail -f /app/logs/server.log`
+
+### Health Monitoring
+- Render auto-pings `/api/healthz` every 30s
+- If unhealthy, Render auto-restarts the service
+
+### Database Backups
+- Render Postgres has automatic daily backups
+- Go to **ankigen-db → Backups** to configure
+
+---
+
+## Updating / Redeploying
+
+```bash
+# Push changes → Render auto-deploys
+git add .
+git commit -m "update: description"
+git push origin main
+```
+
+Render detects the push and rebuilds automatically.
+
+---
+
+## Rollback
+
+```bash
+# Option 1: Git revert
+git revert HEAD
+git push origin main
+
+# Option 2: Render dashboard
+# ankigen-api → Deploys → find previous deploy → "Redeploy"
+```
+
+---
+
+## Troubleshooting
+
+### Build fails
+- Check build logs in Render dashboard
+- Common issue: `pnpm-lock.yaml` out of sync → run `pnpm install` locally and commit
+
+### 502 error
+- Check if the service is running: **ankigen-api → Metrics**
+- Check logs for startup errors
+- Verify all env vars are set
+
+### Database connection error
+- Verify `DATABASE_URL` is set (auto-injected from the database)
+- Check **ankigen-db** is running
+
+### Admin login fails
+- Verify admin user exists in database
+- Check `ADMIN_JWT_SECRET` is set
+- Check `ADMIN_PASSWORD` matches the SHA-256 hash in DB
+
+### Static files not loading
+- Check that the build completed successfully
+- Verify `admin-frontend/dist` and `artifacts/anki-generator/dist/public` exist in the image
