@@ -4,7 +4,6 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import helmet from "helmet";
 import compression from "compression";
-import path from "path";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
@@ -16,12 +15,12 @@ import { getConfig } from "./config";
 
 const app: Express = express();
 
-// Trust the first proxy (Render, Nginx) so req.ip is the real client IP
+// Trust the first proxy (Render, Railway, Nginx) so req.ip is the real client IP
 app.set("trust proxy", 1);
 
 // ─── CORS Configuration ───────────────────────────────────────────────────────
-// Allow ONLY the public frontend and admin frontend origins.
-// Reject all other origins.
+// Allow the public frontend (Render static) and admin frontend (Render static).
+// In production, APP_URL and ADMIN_URL point to the Render static site domains.
 
 function buildAllowedOrigins(): string[] {
   const origins: string[] = [];
@@ -34,6 +33,7 @@ function buildAllowedOrigins(): string[] {
     origins.push("http://localhost:5000");
     origins.push("http://localhost:5173");
     origins.push("http://localhost:3001");
+    origins.push("http://localhost:5174");
   }
   return origins;
 }
@@ -113,38 +113,16 @@ app.use("/api", router);
 // Completely separate route tree from public routes
 app.use("/api/admin", internalAdminRouter);
 
-// ─── Static file serving ──────────────────────────────────────────────────────
-// Serve public frontend static files at /
-const publicDir = path.resolve(__dirname, "../../public");
-app.use(express.static(publicDir, {
-  etag: true,
-  lastModified: true,
-  maxAge: "1d",
-  index: false,
-}));
-
-// Serve admin frontend static files at /admin
-const adminDir = path.resolve(__dirname, "../../admin");
-app.use("/admin", express.static(adminDir, {
-  etag: true,
-  lastModified: true,
-  maxAge: "0",
-  index: false,
-  setHeaders(res) {
-    res.setHeader("X-Robots-Tag", "noindex, nofollow");
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  },
-}));
-
-// ─── SPA fallback routes ──────────────────────────────────────────────────────
-// Admin SPA — /admin/* → /admin/index.html (must be before public fallback)
-app.get("/admin/*", (_req: Request, res: Response) => {
-  res.sendFile(path.join(adminDir, "index.html"));
+// ─── Health check at root (for Railway/load balancer) ─────────────────────────
+app.get("/healthz", (_req: Request, res: Response) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Public SPA — all remaining routes → /index.html
-app.get("*", (_req: Request, res: Response) => {
-  res.sendFile(path.join(publicDir, "index.html"));
+// ─── 404 for unmatched routes ─────────────────────────────────────────────────
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({
+    error: { code: "NOT_FOUND", message: "Endpoint not found" },
+  });
 });
 
 // Global error handler — must be last

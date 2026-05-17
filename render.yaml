@@ -1,101 +1,86 @@
-# ── Render Blueprint — Single Domain, Path-Based Routing ──────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Render Blueprint — Free Tier (Static Sites Only)
+#
+# Services:
+#   1. public-frontend  → mydomain.com/       (static, free)
+#   2. admin-frontend   → mydomain.com/admin  (static, free)
+#
+# API is hosted separately on Railway (free tier).
+# Database is hosted on Neon (free tier).
+#
 # Deploy with: New → Blueprint → Connect repo
-#
-# Architecture:
-#   mydomain.com/       → public-frontend (static)
-#   mydomain.com/api    → agent-api (Docker web service)
-#   mydomain.com/admin  → admin-frontend (static)
-#
-# IMPORTANT: Render assigns each service its own *.onrender.com URL.
-# To achieve single-domain path-based routing, you need EITHER:
-#   Option A: Use a Cloudflare proxy in front (recommended, see RENDER_DEPLOY.md)
-#   Option B: Use the API server as a unified entry point (see Option B below)
-#
-# This blueprint uses Option B: The API server serves ALL routes.
-# The API server proxies / and /admin to the static frontends.
-# ──────────────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
 
 services:
-  # ── Service 1: Unified API + Reverse Proxy (Docker Web Service) ────────────
-  # This is the ONLY service exposed to the internet.
-  # It handles /api/*, serves frontend static files at /, and admin at /admin
-  # ──────────────────────────────────────────────────────────────────────────
+  # ── Service 1: Public Frontend (mydomain.com/) ─────────────────────────────
   - type: web
-    name: ankigen-api
-    runtime: docker
-    plan: starter
-    region: oregon
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    healthCheckPath: /api/healthz
+    name: ankigen-public-frontend
+    runtime: static
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/anki-generator run build
+    staticPublishPath: ./artifacts/anki-generator/dist/public
     autoDeploy: true
+    region: oregon
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-XSS-Protection
+        value: 1; mode=block
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=63072000; includeSubDomains; preload
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 8080
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ankigen-db
-          property: connectionString
-      - key: APP_URL
-        value: https://mydomain.com
-      - key: ADMIN_URL
-        value: https://mydomain.com/admin
-      # AI Providers (set in Render dashboard)
-      - key: OPENROUTER_API_KEY
-        sync: false
-      - key: OLLAMA_CLOUD_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GOOGLE_AI_API_KEY
-        sync: false
-      - key: MISTRAL_API_KEY
-        sync: false
-      # Model selection
-      - key: AI_TEXT_MODEL
-        value: openai/gpt-oss-120b
-      - key: AI_VISION_MODEL
-        value: meta-llama/llama-4-scout-17b-16e-instruct
-      - key: AI_QBANK_MODEL
-        value: openai/gpt-oss-120b
-      - key: AI_MINDMAP_MODEL
-        value: openai/gpt-oss-120b
-      - key: AI_EXPLAIN_MODEL
-        value: openai/gpt-oss-120b
-      # Admin Auth (set in Render dashboard)
-      - key: ADMIN_JWT_SECRET
-        sync: false
-      - key: ADMIN_EMAIL
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
-      - key: ADMIN_SECRET_KEY
-        sync: false
-      - key: ENCRYPTION_KEY
-        sync: false
-      # Optional: IP allowlist for admin
-      # - key: ADMIN_IP_ALLOWLIST
-      #   value: ""
-      # Optional: Stripe
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: STRIPE_PRICE_ID
-        sync: false
-      # Logging
-      - key: LOG_LEVEL
-        value: info
-      - key: LOG_TO_FILE
-        value: "true"
-      - key: LOG_RETENTION_DAYS
-        value: "30"
 
-databases:
-  - name: ankigen-db
-    plan: starter
+  # ── Service 2: Admin Frontend (mydomain.com/admin) ──────────────────────────
+  - type: web
+    name: ankigen-admin-frontend
+    runtime: static
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/admin-frontend run build
+    staticPublishPath: ./admin-frontend/dist
+    autoDeploy: true
     region: oregon
-    postgresMajorVersion: "16"
-    ipAllowList: []
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-XSS-Protection
+        value: 1; mode=block
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=63072000; includeSubDomains; preload
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow
+      - path: /*
+        name: Cache-Control
+        value: no-store, no-cache, must-revalidate
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_ENV
+        value: production
