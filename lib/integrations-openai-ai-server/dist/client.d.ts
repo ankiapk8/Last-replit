@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 export declare const isConfigured: boolean;
 export declare const openai: OpenAI;
-/** Fallback model — Ollama Cloud text model (used when OpenRouter is primary) */
-export declare const FALLBACK_MODEL = "qwen3-coder:480b";
+/** Fallback model — used when primary provider fails */
+export declare const FALLBACK_MODEL = "openai/gpt-oss-120b";
 /**
  * Fallback client using a secondary provider.
  * Evaluated lazily so process.env is read at call-time, not module-load time.

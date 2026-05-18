@@ -1,6 +1,6 @@
 /**
- * Admin auth middleware — three auth methods + role validation + IP allowlist.
- * Methods: 1) Session+Role, 2) JWT Bearer, 3) API Key header.
+ * Admin auth middleware — four auth methods + role validation + IP allowlist.
+ * Methods: 1) Session+Role, 2) JWT Bearer, 3) API Key header, 4) Basic Auth (email:password).
  * Allowed roles: admin, owner, developer.
  */
 
@@ -19,7 +19,7 @@ declare global {
     interface Request {
       adminRole?: AdminRole;
       adminActorId?: string;
-      adminAuthMethod?: "session" | "jwt" | "api_key";
+      adminAuthMethod?: "session" | "jwt" | "api_key" | "basic";
     }
   }
 }
@@ -35,7 +35,6 @@ function checkIPAllowlist(req: Request): boolean {
   const clientIP = req.ip || req.socket.remoteAddress || "";
   return allowlist.some((entry) => {
     if (entry.includes("/")) {
-      // Simple CIDR check — for production use a proper CIDR library
       const [network, bits] = entry.split("/");
       return clientIP.startsWith(network.slice(0, network.lastIndexOf(".")));
     }
@@ -51,7 +50,7 @@ async function getUserRole(userId: string): Promise<string | null> {
       sql`SELECT role FROM public.users WHERE id = ${userId} LIMIT 1`
     );
     return (result.rows[0] as { role?: string } | undefined)?.role || null;
-  } catch {
+  } catch (err) { logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Basic auth verifyBasicAuth error");
     return null;
   }
 }
@@ -60,7 +59,6 @@ async function getUserRole(userId: string): Promise<string | null> {
 
 async function verifyJWT(token: string): Promise<{ sub: string; role: AdminRole } | null> {
   try {
-    // Dynamic import to avoid hard dependency if JWT not used
     const jwt = await import("jsonwebtoken");
     const secret = process.env.ADMIN_JWT_SECRET;
     if (!secret) {
@@ -74,7 +72,7 @@ async function verifyJWT(token: string): Promise<{ sub: string; role: AdminRole 
     };
     if (!ALLOWED_ROLES.includes(payload.role as AdminRole)) return null;
     return { sub: payload.sub, role: payload.role as AdminRole };
-  } catch {
+  } catch (err) { logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Basic auth verifyBasicAuth error");
     return null;
   }
 }
@@ -106,7 +104,38 @@ async function verifyApiKey(key: string): Promise<{ id: string; role: AdminRole 
     );
 
     return { id: row.id, role: row.role as AdminRole };
-  } catch {
+  } catch (err) { logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Basic auth verifyBasicAuth error");
+    return null;
+  }
+}
+
+// ─── Basic Auth Validation ────────────────────────────────────────────────────
+
+async function verifyBasicAuth(authHeader: string): Promise<{ id: string; role: AdminRole } | null> {
+  try {
+    const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
+    const colonIdx = decoded.indexOf(":");
+    if (colonIdx === -1) return null;
+    const email = decoded.slice(0, colonIdx);
+    const password = decoded.slice(colonIdx + 1);
+    if (!email || !password) return null;
+
+    const userResult = await db.execute(
+      sql`SELECT id, role, password_hash FROM public.users WHERE email = ${email} AND is_active = true LIMIT 1`
+    );
+    const user = userResult.rows[0] as { id: string; role: string; password_hash?: string } | undefined;
+    logger.info({ foundUser: !!user, userRole: user?.role, hasPasswordHash: !!user?.password_hash }, "Basic auth user lookup");
+    if (!user || !ALLOWED_ROLES.includes(user.role as AdminRole)) return null;
+
+    // Validate password — support SHA-256 hash or empty password_hash (for dev users without password)
+    const crypto = await import("node:crypto");
+    const passwordHash = crypto.createHash("sha256").update(password).digest("hex");
+    const isValidPassword = !user.password_hash || user.password_hash === passwordHash;
+    logger.info({ isValidPassword, passwordHashPrefix: passwordHash.slice(0,8) }, "Basic auth password check");
+    if (!isValidPassword) return null;
+
+    return { id: user.id, role: user.role as AdminRole };
+  } catch (err) { logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Basic auth verifyBasicAuth error");
     return null;
   }
 }
@@ -139,8 +168,9 @@ export async function adminAuthMiddleware(
     }
   }
 
-  // 3. Try JWT Bearer token
   const authHeader = req.headers.authorization;
+
+  // 3. Try JWT Bearer token
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
     const jwtPayload = await verifyJWT(token);
@@ -166,7 +196,21 @@ export async function adminAuthMiddleware(
     }
   }
 
-  // 5. All methods failed
+  // 5. Try Basic Auth (email:password) — for admin frontend login
+    logger.info({ path: req.path, hasBasic: !!authHeader?.startsWith("Basic ") }, "Basic auth attempt");
+  if (authHeader?.startsWith("Basic ")) {
+    const basicResult = await verifyBasicAuth(authHeader);
+    logger.info({ hasBasicResult: !!basicResult }, "Basic auth result");
+    if (basicResult) {
+      req.adminRole = basicResult.role;
+      req.adminActorId = basicResult.id;
+      req.adminAuthMethod = "basic";
+      next();
+      return;
+    }
+  }
+
+  // 6. All methods failed
   logger.warn(
     { ip: req.ip, path: req.path, hasAuth: !!authHeader, hasApiKey: !!apiKey },
     "Admin access denied — no valid credentials"

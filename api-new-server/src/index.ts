@@ -2,11 +2,12 @@ import app from "./app";
 import { logger, setDbLogWriter } from "./lib/logger";
 import { ensureDatabaseSchema } from "@workspace/db";
 import { writeLogToDb, cleanupOldLogs } from "./lib/db-logger";
-import { getConfig, isDevelopment } from "./config";
+import { getConfig, isDevelopment, isProduction } from "./config";
 import { loadDevOverridesFromDB } from "./lib/dev-overrides";
 import { terminateOcrWorker } from "./routes/extract-pdf";
 import { registerBuiltInTools } from "./tools/register";
 import { loadAllConfigs } from "./lib/config-service";
+import { validateEnvironment } from "./lib/env-validator";
 
 const rawPort = process.env["PORT"] ?? "3001";
 const port = Number(rawPort);
@@ -24,6 +25,9 @@ async function initStripe(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // 0. Validate required environment variables — fail fast
+  validateEnvironment(isProduction());
+
   // 1. Ensure database schema exists
   await ensureDatabaseSchema();
 
@@ -79,7 +83,7 @@ async function main(): Promise<void> {
   }
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT",  () => shutdown("SIGINT"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch((err) => {
