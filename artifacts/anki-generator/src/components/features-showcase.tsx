@@ -727,10 +727,18 @@ export function FeaturesShowcase() {
   return (
     <section className="border-t border-border/40 pt-8 space-y-4">
       {/* Section heading */}
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">What AnkiGen can do</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Every tool you need to study smarter — in one place.</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 32 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: '-60px' }}
+        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <h2 className="text-3xl font-bold text-center mb-2">
+          Everything you need to
+          <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent"> study smarter</span>
+        </h2>
+        <p className="text-sm text-muted-foreground mt-0.5 text-center max-w-md mx-auto">Every tool you need — in one place.</p>
+      </motion.div>
 
       <div className="flex flex-col items-center gap-4 w-full max-w-lg mx-auto">
         {/* Feature card — 3D tilt */}

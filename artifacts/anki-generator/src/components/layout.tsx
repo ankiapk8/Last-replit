@@ -1,7 +1,23 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { BookOpen, LayoutDashboard, Library, Sparkles, Moon, Sun, History, CalendarDays, Download, Crown, CreditCard, Loader2, LogIn, LogOut, User } from "lucide-react";
+import {
+  BookOpen,
+  LayoutDashboard,
+  Library,
+  Sparkles,
+  Moon,
+  Sun,
+  History,
+  CalendarDays,
+  Download,
+  Crown,
+  CreditCard,
+  Loader2,
+  LogIn,
+  LogOut,
+  User,
+} from "lucide-react";
 import { useSubscription, openBillingPortal } from "@/hooks/useSubscription";
 import { useAuth, getLoginUrl, getLogoutUrl } from "@/hooks/useAuth";
 import { ApkWelcomeBanner } from "@/components/apk-welcome-banner";
@@ -25,28 +41,32 @@ import { IosInstallModal } from "@/components/ios-install-modal";
 import { DevPlanBadge } from "@/components/dev-panel";
 
 const NAV_ACCENTS: Record<string, { color: string; glow: string }> = {
-  "/":        { color: "#34d399", glow: "hsl(152 72% 55% / 0.35)" },
-  "/decks":   { color: "#818cf8", glow: "hsl(239 84% 68% / 0.35)" },
+  "/": { color: "#34d399", glow: "hsl(152 72% 55% / 0.35)" },
+  "/decks": { color: "#818cf8", glow: "hsl(239 84% 68% / 0.35)" },
   "/history": { color: "#38bdf8", glow: "hsl(199 89% 60% / 0.35)" },
   "/planner": { color: "#fb923c", glow: "hsl(24 95% 60% / 0.35)" },
 };
 
 const NAV_BACKDROPS: Record<string, { light: string; dark: string }> = {
-  "/":        {
-    light: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(152 72% 55% / 0.055) 0%, transparent 70%)",
-    dark:  "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(152 72% 55% / 0.08) 0%, transparent 70%)",
+  "/": {
+    light:
+      "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(152 72% 55% / 0.055) 0%, transparent 70%)",
+    dark: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(152 72% 55% / 0.08) 0%, transparent 70%)",
   },
-  "/decks":   {
-    light: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(239 84% 68% / 0.055) 0%, transparent 70%)",
-    dark:  "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(239 84% 68% / 0.08) 0%, transparent 70%)",
+  "/decks": {
+    light:
+      "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(239 84% 68% / 0.055) 0%, transparent 70%)",
+    dark: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(239 84% 68% / 0.08) 0%, transparent 70%)",
   },
   "/history": {
-    light: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(199 89% 60% / 0.055) 0%, transparent 70%)",
-    dark:  "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(199 89% 60% / 0.08) 0%, transparent 70%)",
+    light:
+      "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(199 89% 60% / 0.055) 0%, transparent 70%)",
+    dark: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(199 89% 60% / 0.08) 0%, transparent 70%)",
   },
   "/planner": {
-    light: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(24 95% 60% / 0.055) 0%, transparent 70%)",
-    dark:  "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(24 95% 60% / 0.08) 0%, transparent 70%)",
+    light:
+      "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(24 95% 60% / 0.055) 0%, transparent 70%)",
+    dark: "radial-gradient(ellipse 90% 55% at 50% -5%, hsl(24 95% 60% / 0.08) 0%, transparent 70%)",
   },
 };
 
@@ -57,7 +77,8 @@ function resolveBackdropKey(location: string): string {
     location.startsWith("/practice") ||
     location.startsWith("/qbanks") ||
     location.startsWith("/study")
-  ) return "/decks";
+  )
+    return "/decks";
   if (location.startsWith("/history")) return "/history";
   if (location.startsWith("/planner")) return "/planner";
   return "/";
@@ -70,6 +91,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { isPro } = useSubscription();
   const { user, isLoggedIn, isLoading: authLoading, displayName, initials } = useAuth();
   const [billingLoading, setBillingLoading] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   async function handleManageBilling() {
     setBillingLoading(true);
@@ -115,12 +143,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const activeBackdrop = NAV_BACKDROPS[backdropKey];
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background text-foreground">
+    <div className="min-h-[100dvh] flex flex-col bg-background text-foreground grain-overlay">
       <AnimatePresence>
         <motion.div
           key={backdropKey + (dark ? "-dark" : "-light")}
           aria-hidden
-          className="fixed inset-0 pointer-events-none z-0"
+          className="fixed inset-0 pointer-events-none z-0 blur-3xl scale-150"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -128,7 +156,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
           style={{ background: dark ? activeBackdrop.dark : activeBackdrop.light }}
         />
       </AnimatePresence>
-      <header className="sticky top-0 z-50 w-full border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/60 relative overflow-hidden" style={{ boxShadow: "0 1px 0 0 hsl(var(--border) / 0.5), 0 4px 16px -4px rgba(0,0,0,0.06)" }}>
+      {/* Second overlay layer for depth */}
+      <motion.div
+        key={backdropKey + "-overlay"}
+        aria-hidden
+        className="fixed inset-0 pointer-events-none z-0 mix-blend-overlay opacity-30"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.3 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.7 }}
+        style={{ background: dark ? activeBackdrop.dark : activeBackdrop.light }}
+      />
+      <header
+        className={`sticky top-0 z-50 w-full border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/60 relative overflow-hidden transition-all duration-500 ${scrolled ? "shadow-lg shadow-black/10" : ""}`}
+      >
+        {/* Animated gradient border bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] animated-gradient-border opacity-60" />
         <AnimatePresence mode="wait">
           {activeHeaderAccent && (
             <motion.div
@@ -139,24 +182,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.5 }}
-              style={{ background: `linear-gradient(135deg, ${activeHeaderAccent.color}0d 0%, ${activeHeaderAccent.color}05 40%, transparent 65%)` }}
+              style={{
+                background: `linear-gradient(135deg, ${activeHeaderAccent.color}0d 0%, ${activeHeaderAccent.color}05 40%, transparent 65%)`,
+              }}
             />
           )}
         </AnimatePresence>
-        <div className="container flex h-14 items-center gap-1 sm:gap-2 px-3 sm:px-4 md:px-6 max-w-5xl mx-auto relative z-10">
+        <div className="container flex h-16 items-center gap-1 sm:gap-2 px-3 sm:px-4 md:px-6 max-w-5xl mx-auto relative z-10">
           <Link href="/" className="flex items-center gap-2 mr-1 sm:mr-2 md:mr-6 shrink-0">
-            <BookOpen className="h-6 w-6 text-primary" />
-            <span className="font-serif text-lg font-bold tracking-tight hidden sm:inline">AnkiGen</span>
+            <motion.div
+              whileHover={{ rotate: -8, scale: 1.15 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            >
+              <BookOpen className="h-6 w-6 text-primary" />
+            </motion.div>
+            <span className="font-serif text-lg font-bold tracking-tight hidden sm:inline bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
+              AnkiGen
+            </span>
           </Link>
           <nav className="flex items-center gap-0.5 sm:gap-1 min-w-0">
             {navLinks.map(({ href, label, icon: Icon }) => {
-              const isActive = href === "/"
-                ? location === "/"
-                : location.startsWith(href);
+              const isActive = href === "/" ? location === "/" : location.startsWith(href);
               const accent = NAV_ACCENTS[href];
               return (
                 <Link key={href} href={href}>
-                  <span
+                  <motion.span
+                    whileHover={{ y: -1 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 22 }}
                     className={`relative flex items-center gap-1.5 px-2 sm:px-3 py-2 sm:py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
                       isActive
                         ? "text-foreground"
@@ -169,7 +221,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       <motion.span
                         layoutId="nav-indicator"
                         className="absolute inset-0 rounded-md"
-                        style={{ background: `${accent.color}14`, boxShadow: `0 0 10px ${accent.glow}` }}
+                        style={{
+                          background: `${accent.color}14`,
+                          boxShadow: `0 0 10px ${accent.glow}`,
+                        }}
                         transition={{ type: "spring", stiffness: 380, damping: 30 }}
                       />
                     )}
@@ -185,22 +240,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
                         transition={{ type: "spring", stiffness: 380, damping: 30 }}
                       />
                     )}
-                  </span>
+                  </motion.span>
                 </Link>
               );
             })}
 
             <Link href="/generate">
               <motion.span
-                whileHover={{ scale: 1.04 }}
+                whileHover={{ scale: 1.06, y: -2 }}
                 whileTap={{ scale: 0.96 }}
                 transition={{ type: "spring", stiffness: 400, damping: 22 }}
-                className={`relative ml-0.5 sm:ml-1 inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-md text-sm font-semibold overflow-hidden text-white shadow-sm shadow-primary/20 ${
-                  generateActive ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-background" : ""
+                className={`relative ml-0.5 sm:ml-1 inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-xl text-sm font-semibold overflow-hidden text-white shadow-lg shadow-emerald-500/30 ${
+                  generateActive
+                    ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-background"
+                    : ""
                 }`}
                 style={{
-                  background:
-                    "linear-gradient(120deg, hsl(150 60% 45%) 0%, hsl(140 65% 42%) 50%, hsl(95 65% 45%) 100%)",
+                  background: "linear-gradient(90deg, #10b981 0%, #14b8a6 50%, #10b981 100%)",
+                  backgroundSize: "200% 100%",
                 }}
                 aria-label="Generate flashcards"
               >
@@ -263,9 +320,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 onClick={handleManageBilling}
                 disabled={billingLoading}
               >
-                {billingLoading
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <CreditCard className="h-4 w-4" />}
+                {billingLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CreditCard className="h-4 w-4" />
+                )}
               </Button>
             ) : (
               <Link href="/pricing">
@@ -280,15 +339,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Button>
               </Link>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={() => setDark(d => !d)}
+            <motion.button
+              whileHover={{ rotate: 20, scale: 1.15 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+              onClick={() => setDark((d) => !d)}
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
+              <AnimatePresence mode="wait">
+                {dark ? (
+                  <motion.div key="sun" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.2 }}>
+                    <Sun className="h-4 w-4" />
+                  </motion.div>
+                ) : (
+                  <motion.div key="moon" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }} transition={{ duration: 0.2 }}>
+                    <Moon className="h-4 w-4" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.button>
 
             {/* Auth button */}
             {authLoading ? (
@@ -335,7 +405,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <a href={getLogoutUrl()} className="flex items-center text-destructive focus:text-destructive">
+                    <a
+                      href={getLogoutUrl()}
+                      className="flex items-center text-destructive focus:text-destructive"
+                    >
                       <LogOut className="h-3.5 w-3.5 mr-2" />
                       Sign out
                     </a>
@@ -347,7 +420,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 variant="ghost"
                 size="sm"
                 className="h-8 gap-1.5 text-muted-foreground hover:text-foreground px-2"
-                onClick={() => { window.location.href = getLoginUrl(window.location.pathname); }}
+                onClick={() => {
+                  window.location.href = getLoginUrl(window.location.pathname);
+                }}
                 aria-label="Sign in"
                 title="Sign in to save your progress"
               >
@@ -358,7 +433,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className={`relative z-[1] flex-1 flex flex-col w-full ${location.startsWith("/planner") ? "" : "max-w-5xl mx-auto p-4 md:p-8"}`}>
+      <main
+        className={`relative z-[1] flex-1 flex flex-col w-full ${location.startsWith("/planner") ? "" : "max-w-5xl mx-auto p-4 md:p-8"}`}
+      >
         {children}
       </main>
       <FeedbackButton />

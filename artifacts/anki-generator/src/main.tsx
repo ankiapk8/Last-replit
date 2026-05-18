@@ -1,5 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { setBaseUrl } from "@workspace/api-client-react";
+import { useEffect } from "react";
+import Lenis from "lenis";
 import "./index.css";
 
 const apiBase = import.meta.env.VITE_API_BASE as string | undefined;
@@ -68,6 +70,11 @@ try {
 }
 
 const { default: App } = await import("./App");
+
+// Initialize Lenis smooth scroll
+const lenis = new Lenis({ lerp: 0.08, smoothWheel: true });
+function raf(time: number) { lenis.raf(time); requestAnimationFrame(raf); }
+requestAnimationFrame(raf);
 
 createRoot(document.getElementById("root")!).render(<App />);
 

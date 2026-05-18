@@ -54,10 +54,10 @@ export function ClickRipple() {
         {ripples.map((r) => (
           <motion.span
             key={r.id}
-            initial={{ scale: 0, opacity: 0.55 }}
-            animate={{ scale: 1, opacity: 0 }}
+            initial={{ scale: 0, opacity: 0.4 }}
+            animate={{ scale: 2.5, opacity: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
             style={{
               position: "absolute",
               left: r.x - r.size / 2,

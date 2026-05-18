@@ -174,14 +174,33 @@ export default function Pricing() {
     <div className="relative space-y-10 animate-in fade-in duration-500 pb-16">
       <AmbientOrbs color="hsl(38 95% 58% / 0.10)" className="rounded-3xl" />
 
-      <PageHeader
-        icon={Crown}
-        iconColor="#f59e0b"
-        iconGlow="hsl(38 95% 60% / 0.5)"
-        gradient="from-amber-500 via-orange-400 to-yellow-500"
-        title="Upgrade to Pro"
-        subtitle="Unlock unlimited card generation, QBanks, AI explanations, and more."
-      />
+      {/* Hero with ambient orbs */}
+      <motion.div className="text-center py-12 relative">
+        {/* Large ambient glow orbs */}
+        <div className="absolute top-0 left-1/4 w-64 h-64 rounded-full blur-3xl opacity-15 animate-float"
+          style={{ background: 'radial-gradient(circle, #f59e0b, #f97316)' }} />
+        <div className="absolute top-0 right-1/4 w-64 h-64 rounded-full blur-3xl opacity-10 animate-float"
+          style={{ background: 'radial-gradient(circle, #8b5cf6, #6366f1)', animationDelay: '2s' }} />
+
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 20 }}>
+          <Crown className="w-12 h-12 mx-auto mb-4 text-amber-400" />
+        </motion.div>
+
+        <motion.h1
+          className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-amber-400 via-orange-300 to-yellow-300 bg-clip-text text-transparent"
+          initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}>
+          Upgrade to Pro
+        </motion.h1>
+
+        <motion.p
+          className="text-muted-foreground text-lg max-w-xl mx-auto"
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}>
+          Unlock unlimited card generation, QBanks, AI explanations, and more.
+        </motion.p>
+      </motion.div>
 
       {/* Polling spinner */}
       {pollingForPro && (
@@ -256,13 +275,14 @@ export default function Pricing() {
         </motion.div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-6 items-start">
         {/* Free tier */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 flex flex-col gap-5"
+          whileHover={{ y: -6, transition: { type: "spring", stiffness: 300, damping: 20 } }}
+          className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm glass-card p-6 flex flex-col gap-5"
         >
           <div>
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Free</span>
@@ -290,9 +310,15 @@ export default function Pricing() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="relative rounded-2xl border-2 border-amber-400/60 dark:border-amber-600/50 bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-card dark:from-amber-950/20 dark:via-orange-950/15 dark:to-card p-6 flex flex-col gap-5 shadow-lg shadow-amber-500/10"
+          whileHover={{ y: -6, transition: { type: "spring", stiffness: 300, damping: 20 } }}
+          className="relative rounded-2xl bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-card dark:from-amber-950/20 dark:via-orange-950/15 dark:to-card p-6 flex flex-col gap-5 shadow-xl shadow-amber-500/15 -translate-y-2"
+          style={{ border: '2px solid transparent', backgroundClip: 'padding-box' }}
         >
-          <div className="absolute -top-3 left-4">
+          {/* Animated gradient border */}
+          <div className="absolute -inset-[2px] rounded-2xl animated-gradient-border -z-10" />
+          <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-br from-amber-50/60 via-orange-50/40 to-card dark:from-amber-950/20 dark:via-orange-950/15 dark:to-card -z-5" />
+
+          <div className="absolute -top-3 left-4 z-10">
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm">
               <Sparkles className="h-3 w-3" />
               Most Popular
@@ -325,16 +351,30 @@ export default function Pricing() {
               <p className="mt-1 text-sm text-muted-foreground">Everything, unlimited.</p>
             </div>
           </div>
-          <ul className="flex flex-col gap-2.5 flex-1">
+          <motion.ul
+            className="flex flex-col gap-2.5 flex-1"
+            variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
+            initial="hidden"
+            animate="visible"
+          >
             {PRO_FEATURES.map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-center gap-2.5 text-sm">
-                <div className="h-4 w-4 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+              <motion.li
+                key={text}
+                variants={{ hidden: { opacity: 0, x: -8 }, visible: { opacity: 1, x: 0, transition: { duration: 0.3 } } }}
+                className="flex items-center gap-2.5 text-sm"
+              >
+                <motion.div
+                  className="h-4 w-4 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                >
                   <Check className="h-2.5 w-2.5 text-amber-600 dark:text-amber-400" />
-                </div>
+                </motion.div>
                 {text}
-              </li>
+              </motion.li>
             ))}
-          </ul>
+          </motion.ul>
           <div className="flex flex-col gap-2">
             {isPro ? (
               <Button

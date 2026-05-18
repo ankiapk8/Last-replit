@@ -49,6 +49,21 @@ function relativeDate(iso: string): string {
   return `${Math.floor(diffDays / 30)}mo ago`;
 }
 
+function AnimatedNumber({ value, duration = 1200 }: { value: number; duration?: number }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    let start = 0;
+    const step = value / (duration / 16);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= value) { setDisplay(value); clearInterval(timer); }
+      else setDisplay(Math.floor(start));
+    }, 16);
+    return () => clearInterval(timer);
+  }, [value, duration]);
+  return <>{display}</>;
+}
+
 function masteryColor(pct: number | null): { chip: string; dot: string } {
   if (pct === null) return { chip: "bg-muted/60 border-border/40 text-muted-foreground", dot: "bg-muted-foreground/40" };
   if (pct >= 80) return { chip: "bg-emerald-500/15 border-emerald-400/30 text-emerald-700 dark:text-emerald-300", dot: "bg-emerald-500" };
@@ -336,23 +351,29 @@ export default function Dashboard() {
       </AnimatePresence>
 
       {/* Top stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <motion.div
+        className="grid grid-cols-2 md:grid-cols-4 gap-4"
+        variants={{
+          hidden: {},
+          visible: { transition: { staggerChildren: 0.08 } },
+        }}
+        initial="hidden"
+        animate="visible"
+      >
         {[
-          { label: "Flashcard Decks", value: totalDecks, icon: Layers, hexColor: "#34d399", bgClass: "bg-emerald-500/10", glowRgb: "52,211,153" },
-          { label: "Total Cards", value: totalCards, icon: FileText, hexColor: "#38bdf8", bgClass: "bg-sky-500/10", glowRgb: "56,189,248" },
-          { label: "Question Banks", value: totalQbanks, icon: Stethoscope, hexColor: "#a78bfa", bgClass: "bg-violet-500/10", glowRgb: "167,139,250" },
-          { label: "Study Streak", value: streak > 0 ? `${streak}d` : "—", icon: Flame, hexColor: "#fb923c", bgClass: "bg-orange-500/10", glowRgb: "251,146,60" },
-        ].map(({ label, value, icon: Icon, hexColor, bgClass, glowRgb }, idx) => (
+          { label: "Flashcard Decks", value: totalDecks, icon: Layers, hexColor: "#34d399", bgClass: "bg-emerald-500/10", glowRgb: "52,211,153", animateNum: true },
+          { label: "Total Cards", value: totalCards, icon: FileText, hexColor: "#38bdf8", bgClass: "bg-sky-500/10", glowRgb: "56,189,248", animateNum: true },
+          { label: "Question Banks", value: totalQbanks, icon: Stethoscope, hexColor: "#a78bfa", bgClass: "bg-violet-500/10", glowRgb: "167,139,250", animateNum: true },
+          { label: "Study Streak", value: streak, icon: Flame, hexColor: "#fb923c", bgClass: "bg-orange-500/10", glowRgb: "251,146,60", animateNum: true, suffix: "d" },
+        ].map(({ label, value, icon: Icon, hexColor, bgClass, glowRgb, animateNum, suffix }) => (
           <motion.div
             key={label}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 * idx, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            whileHover={{ y: -3, transition: { duration: 0.15 } }}
+            variants={{ hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } } }}
+            whileHover={{ y: -4, boxShadow: "0 20px 40px -8px rgba(0,0,0,0.15)", transition: { duration: 0.2 } }}
             className="h-full"
           >
             <div
-              className="rounded-xl border bg-card/70 backdrop-blur-sm shadow-sm h-full hover:shadow-md transition-all overflow-hidden relative"
+              className="rounded-2xl border bg-card/70 backdrop-blur-sm shadow-sm h-full hover:shadow-lg transition-all overflow-hidden relative"
               style={{ boxShadow: `inset 0 0 0 1px rgba(${glowRgb},0.12)` }}
             >
               {/* Shimmer sweep on mount */}
@@ -362,23 +383,33 @@ export default function Dashboard() {
                 style={{ background: "linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%)" }}
                 initial={{ x: "-120%" }}
                 animate={{ x: "160%" }}
-                transition={{ delay: 0.3 + idx * 0.1, duration: 0.7, ease: "easeOut" }}
+                transition={{ delay: 0.3, duration: 0.7, ease: "easeOut" }}
               />
               {/* Radial glow */}
               <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(circle at 15% 50%, rgba(${glowRgb},0.10) 0%, transparent 65%)` }} />
               <div className="p-4 flex flex-col gap-3 relative">
                 <div className={`h-9 w-9 rounded-xl ${bgClass} flex items-center justify-center`} style={{ boxShadow: `0 0 10px rgba(${glowRgb},0.25)` }}>
-                  <Icon className="h-4 w-4" style={{ color: hexColor }} />
+                  {Icon === Flame ? (
+                    <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+                      <Icon className="h-4 w-4" style={{ color: hexColor }} />
+                    </motion.div>
+                  ) : (
+                    <Icon className="h-4 w-4" style={{ color: hexColor }} />
+                  )}
                 </div>
                 <div>
-                  {isLoading ? <Skeleton className="h-7 w-14" /> : <p className="text-2xl font-bold tracking-tight">{value}</p>}
+                  {isLoading ? <Skeleton className="h-7 w-14" /> : (
+                    <p className="text-2xl font-bold tracking-tight">
+                      {animateNum ? <AnimatedNumber value={value} /> : value}{suffix || ""}{value === 0 && label === "Study Streak" ? "—" : ""}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground font-medium mt-0.5">{label}</p>
                 </div>
               </div>
             </div>
           </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       {/* Study performance stats bar */}
       <motion.div
