@@ -3,9 +3,8 @@
 #
 # Services:
 #   1. public-frontend  → mydomain.com/       (static, free)
-#   2. admin-frontend   → mydomain.com/admin  (static, free)
 #
-# API is hosted separately on Railway (free tier).
+# API is hosted separately (Railway free tier).
 # Database is hosted on Neon (free tier).
 #
 # Deploy with: New → Blueprint → Connect repo
@@ -39,44 +38,6 @@ services:
       - path: /assets/*
         name: Cache-Control
         value: public, max-age=31536000, immutable
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-  # ── Service 2: Admin Frontend (mydomain.com/admin) ──────────────────────────
-  - type: web
-    name: ankigen-admin-frontend
-    runtime: static
-    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/admin-frontend run build
-    staticPublishPath: ./admin-frontend/dist
-    autoDeploy: true
-    region: oregon
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
-      - path: /*
-        name: X-XSS-Protection
-        value: 1; mode=block
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
-      - path: /*
-        name: Strict-Transport-Security
-        value: max-age=63072000; includeSubDomains; preload
-      - path: /*
-        name: X-Robots-Tag
-        value: noindex, nofollow
-      - path: /*
-        name: Cache-Control
-        value: no-store, no-cache, must-revalidate
     routes:
       - type: rewrite
         source: /*
