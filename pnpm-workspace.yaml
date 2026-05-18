@@ -1,6 +1,7 @@
 packages:
   - artifacts/*
   - api-new-server
+  - admin-frontend
   - lib/*
   - lib/integrations/*
   - scripts
