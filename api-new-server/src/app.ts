@@ -19,8 +19,8 @@ const app: Express = express();
 app.set("trust proxy", 1);
 
 // ─── CORS Configuration ───────────────────────────────────────────────────────
-// Allow the public frontend (Render static) and admin frontend (Render static).
-// In production, APP_URL and ADMIN_URL point to the Render static site domains.
+// Allow the public frontend and admin frontend.
+// In production, APP_URL and ADMIN_URL point to the deployed domains.
 
 function buildAllowedOrigins(): string[] {
   const origins: string[] = [];
@@ -113,12 +113,36 @@ app.use("/api", router);
 // Completely separate route tree from public routes
 app.use("/api/admin", internalAdminRouter);
 
-// ─── Health check at root (for Railway/load balancer) ─────────────────────────
+// ─── Health check at root (for load balancer) ─────────────────────────────────
 app.get("/healthz", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// ─── 404 for unmatched routes ─────────────────────────────────────────────────
+// ─── Static frontend serving ──────────────────────────────────────────────────
+const staticDir = getConfig().STATIC_DIR;
+if (staticDir) {
+  const path = await import("path");
+  const fs = await import("fs");
+  const resolvedStatic = path.resolve(staticDir);
+  if (fs.existsSync(resolvedStatic)) {
+    logger.info({ staticDir: resolvedStatic }, "Serving static frontend");
+    app.use(express.static(resolvedStatic, { index: false }));
+
+    // SPA fallback: serve index.html for non-API, non-file requests
+    app.get(/^(?!\/api\/).*$/, (req: Request, res: Response, next: NextFunction) => {
+      const reqPath = path.resolve(resolvedStatic, req.path.replace(/^\//, ""));
+      if (fs.existsSync(reqPath) && fs.statSync(reqPath).isFile()) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(resolvedStatic, "index.html"));
+    });
+  } else {
+    logger.warn({ staticDir: resolvedStatic }, "STATIC_DIR does not exist — skipping static serving");
+  }
+}
+
+// ─── 404 for unmatched API routes ─────────────────────────────────────────────
 app.use((_req: Request, res: Response) => {
   res.status(404).json({
     error: { code: "NOT_FOUND", message: "Endpoint not found" },
